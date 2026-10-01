@@ -1,12 +1,10 @@
 package com.laptopkit.tunnel.client;
 
-import java.util.Locale;
-
 /**
  * How the client carries frames to the server. The tunnel protocol is the same either way;
  * only the thing underneath it differs.
  */
-enum Transport {
+public enum Transport {
 
     /** One WebSocket, the normal choice. */
     WEBSOCKET("websocket"),
@@ -32,16 +30,4 @@ enum Transport {
         return this == WEBSOCKET ? HTTP : WEBSOCKET;
     }
 
-    /**
-     * Parse the {@code --transport} value. {@code auto} is handled by the caller, which has
-     * to alternate rather than pick, so it is not a value here.
-     */
-    static Transport parse(String raw) {
-        return switch (raw.trim().toLowerCase(Locale.ROOT)) {
-            case "ws", "websocket", "wss" -> WEBSOCKET;
-            case "http", "https" -> HTTP;
-            default -> throw new IllegalArgumentException(
-                    "--transport: expected auto, ws or http, got " + raw);
-        };
-    }
 }

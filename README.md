@@ -1,5 +1,12 @@
 # chisel-tunnel — TCP поверх WebSocket на Java + Spring Boot
 
+> **Ветка `debug/run-from-fields`.** Аргументов командной строки нет: всё, что раньше
+> задавалось флагами, лежит полями в [`TunnelConfig`](src/main/java/com/laptopkit/tunnel/TunnelConfig.java).
+> Запуск — обычный `main` в `TunnelApplication`, без run configuration. Ниже по тексту
+> флаги вида `--auth` упоминаются как названия параметров; соответствие полям — в таблице
+> в разделе «Запуск». В основную ветку это не вливается: разбор аргументов удалён вместе
+> с тестами на него.
+
 Самодостаточная замена связки **chisel-клиент ⇄ chisel-сервер** из схемы цепочки: вход
 в туннель на `127.0.0.1:3128`, транспорт по `wss`, публичный сервер. Один jar, два режима
 (`server` / `client`), как у chisel.
@@ -36,35 +43,60 @@ mvn -o package -DskipTests
 
 ## Запуск
 
-Сервер (публичная сторона):
+Открыть [`TunnelConfig`](src/main/java/com/laptopkit/tunnel/TunnelConfig.java), поправить поля,
+запустить `TunnelApplication` зелёной стрелкой. Больше ничего.
+
+Главное поле — `MODE`:
+
+| `MODE` | Что поднимается |
+|---|---|
+| `BOTH` (по умолчанию) | сервер и клиент в одном процессе — брейкпоинт в `Mux` или `HttpLink` ловит обе стороны сразу |
+| `SERVER` | только публичная сторона |
+| `CLIENT` | только вход в туннель; сервер должен уже работать по `CLIENT_URL` |
+| `HEALTHCHECK` | дёрнуть `HEALTHCHECK_URL` и выйти с кодом |
+
+`BOTH` — то, ради чего ветка и делалась: весь обмен кадрами виден в одном отладчике, а адрес
+клиенту собирается из `SERVER_PORT` и `PATH`, чтобы порт не держать в двух местах.
+
+Значения по умолчанию дают замкнутый круг, которому ничего не нужно снаружи: запрос на
+`127.0.0.1:18128` уходит в туннель и выходит на собственном HTTP-порту сервера.
 
 ```bash
-java -jar tunnel.jar server --port 8080 --auth tunnel:СЕКРЕТ
+curl http://127.0.0.1:18128/healthz          # через туннель
+curl http://127.0.0.1:19000/status           # что думает клиент
+curl -H "X-Tunnel-Auth: tunnel:debug" http://127.0.0.1:18080/status
 ```
 
-Клиент (вход в туннель), пробросы в синтаксисе chisel:
+Порты взяты высокие намеренно: 3128, 3129, 3130, 8080 и 8090 заняты живой цепочкой, и отладочный
+запуск, тихо севший на один из них, выглядел бы работающим, ломая при этом рабочий стенд.
 
-```bash
-java -jar tunnel.jar client --auth tunnel:СЕКРЕТ --keepalive 25s \
-    wss://ПУБЛИЧНЫЙ-АДРЕС/ \
-    0.0.0.0:3128:127.0.0.1:3129 \
-    R:3130:host.docker.internal:3129
-```
+### Что было флагом, то стало полем
 
-Это ровно те два проброса, что задаёт `compose.cloud.yaml` для chisel-клиента:
+| Раньше | Теперь |
+|---|---|
+| `server --port` | `SERVER_PORT` |
+| `server --host` | `SERVER_HOST` (пусто = все интерфейсы) |
+| `--auth` | `AUTH` — один на сервер и клиент |
+| `--path` | `PATH` |
+| `--allow` (повторяемый) | `ALLOW`, список строк |
+| `server --keepalive` | `SERVER_KEEPALIVE` |
+| `--pong-timeout` | `PONG_TIMEOUT` |
+| `--no-http-fallback` | `HTTP_FALLBACK = false` |
+| `tunnel.status` | `STATUS` |
+| `client <ws-url>` | `CLIENT_URL` |
+| `client <forward> …` | `FORWARDS`, список строк в том же синтаксисе chisel |
+| `client --keepalive` | `CLIENT_KEEPALIVE_SECONDS` |
+| `--transport auto\|ws\|http` | `TRANSPORT` = `null` \| `Transport.WEBSOCKET` \| `Transport.HTTP` |
+| `--health [bind:]порт` | `HEALTH_HOST` и `HEALTH_PORT` (0 = выключено) |
+| `-v` / `--verbose` | `VERBOSE` |
+| `healthcheck <url>` | `MODE = HEALTHCHECK` и `HEALTHCHECK_URL` |
 
-| Проброс | Тип | Что делает |
-|---|---|---|
-| `0.0.0.0:3128:127.0.0.1:3129` | прямой | клиент слушает `0.0.0.0:3128`, сервер дозванивается до `127.0.0.1:3129` у себя |
-| `R:3130:host.docker.internal:3129` | обратный | сервер слушает `:3130`, клиент дозванивается до `host.docker.internal:3129` у себя |
+Пробросы остались строками (`[bind:]порт:хост:порт`, с `R:` — обратный): так они написаны и в
+compose-файле, и в документации, а разбирать их всё равно надо — ошибка в строке падает на
+старте с внятным сообщением.
 
-Синтаксис проброса: `[bind:]порт:хост:порт`, с префиксом `R:` — обратный. Без `bind`
-прямой слушает `127.0.0.1`, обратный — `0.0.0.0`. Короткие формы достраиваются с конца,
-как у chisel: `3000` это `3000:127.0.0.1:3000`, а `example.com:3000` —
-`3000:example.com:3000`. IPv6 пишется в скобках: `[::1]:3128:[fe80::1]:3129`.
-
-URL можно давать как `wss://host/`, `https://host` или просто `host` — схема приводится к
-`ws/wss`, а если пути нет, добавляется `/tunnel` (эндпойнт по умолчанию).
+Поля сознательно не `final`: константу компилятор подставил бы по месту, и поменять её из
+работающего отладчика было бы нельзя, а так — можно, прямо на брейкпоинте.
 
 ### Настройки сервера
 
@@ -317,9 +349,10 @@ mvn -o test
 | `StatusDisabledTest` | `tunnel.status=false` убирает эндпойнт (404), `/healthz` продолжает работать |
 | `ClientHealthTest` | при живом туннеле — 200 `up`; после разрыва тот же живой процесс отдаёт 503 `down`; с выключенным keepalive — `unknown` с объяснением |
 
-Проверки протокола, разбора аргументов и форматирования — отдельными модульными тестами
-(`FramesTest`, `FramingTest`, `ForwardSpecTest`, `TunnelClientTest`, `AddressPolicyTest`,
-`SharedSecretTest`, `StreamInfoTest`, `HumanFormatTest`).
+Проверки протокола и форматирования — отдельными модульными тестами (`FramesTest`,
+`FramingTest`, `ForwardSpecTest`, `TunnelClientTest`, `AddressPolicyTest`, `SharedSecretTest`,
+`StreamInfoTest`, `HumanFormatTest`). Тестов на разбор аргументов на этой ветке нет: вместе с
+`ServerArgsTest` ушло и то, что он проверял.
 
 `TunnelStaleSessionTest` опирается на `MuteWebSocketClient` — ручной WebSocket-клиент,
 который завершает рукопожатие и потом молчит, не отвечая на ping. Так выглядит ноутбук,

@@ -15,6 +15,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -47,10 +48,7 @@ class HttpFallbackTest {
              UpgradeBlockingProxy proxy = UpgradeBlockingProxy.inFrontOf(serverPort)) {
 
             int localPort = freePort();
-            Thread client = runClient(
-                    "--keepalive", "5s",
-                    "ws://127.0.0.1:" + proxy.port() + "/tunnel",
-                    localPort + ":127.0.0.1:" + echo.port());
+            Thread client = runClient(setup(proxy.port(), localPort, echo.port(), null));
             try {
                 // The first attempt is a WebSocket and the proxy answers 400. The client backs
                 // off, alternates, and the local listener only opens once an attempt is up.
@@ -77,9 +75,7 @@ class HttpFallbackTest {
 
             int localPort = freePort();
             Thread client = runClient(
-                    "--keepalive", "5s", "--transport", "ws",
-                    "ws://127.0.0.1:" + proxy.port() + "/tunnel",
-                    localPort + ":127.0.0.1:" + echo.port());
+                    setup(proxy.port(), localPort, echo.port(), Transport.WEBSOCKET));
             try {
                 // Several reconnect attempts' worth of time, all of which must fail.
                 Thread.sleep(6_000);
@@ -92,10 +88,16 @@ class HttpFallbackTest {
         }
     }
 
-    private Thread runClient(String... args) {
+    /** @param transport null for auto, which is what the first test is about */
+    private static ClientSetup setup(int proxyPort, int localPort, int echoPort, Transport transport) {
+        return ClientSetup.of("ws://127.0.0.1:" + proxyPort + "/tunnel", null, 5,
+                List.of(localPort + ":127.0.0.1:" + echoPort), transport, "127.0.0.1", 0);
+    }
+
+    private Thread runClient(ClientSetup setup) {
         Thread t = new Thread(() -> {
             try {
-                TunnelClient.run(args);
+                TunnelClient.run(setup);
             } catch (Exception ignored) {
                 // the loop ends when the thread is interrupted
             }

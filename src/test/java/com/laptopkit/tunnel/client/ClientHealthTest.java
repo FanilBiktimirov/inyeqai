@@ -116,17 +116,6 @@ class ClientHealthTest {
         assertEquals(503, ClientHealth.Verdict.DOWN.code);
     }
 
-    @Test
-    void bindSpecParsing() {
-        assertEquals(new TunnelClient.HostPort("127.0.0.1", 9000), TunnelClient.HostPort.parse("9000"));
-        assertEquals(new TunnelClient.HostPort("0.0.0.0", 9000), TunnelClient.HostPort.parse("0.0.0.0:9000"));
-        assertEquals(new TunnelClient.HostPort("::1", 9000), TunnelClient.HostPort.parse("[::1]:9000"));
-        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
-                () -> TunnelClient.HostPort.parse("0.0.0.0:0"));
-        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
-                () -> TunnelClient.HostPort.parse("nope"));
-    }
-
     private String url() {
         return "ws://127.0.0.1:" + serverPort + "/tunnel";
     }
