@@ -61,6 +61,7 @@ final class ClientConnection implements WebSocket.Listener {
     private final int keepaliveSec;
     private final List<ForwardSpec> locals;
     private final List<Reverse> reverses;
+    private final Transport transport;
 
     private final LinkedBlockingQueue<byte[]> sendQ = new LinkedBlockingQueue<>();
     private final Semaphore dataSlots = new Semaphore(MAX_INFLIGHT_DATA);
@@ -84,21 +85,38 @@ final class ClientConnection implements WebSocket.Listener {
 
     ClientConnection(String url, String auth, int keepaliveSec,
                      List<ForwardSpec> locals, List<Reverse> reverses) {
+        this(url, auth, keepaliveSec, locals, reverses, Transport.WEBSOCKET);
+    }
+
+    ClientConnection(String url, String auth, int keepaliveSec,
+                     List<ForwardSpec> locals, List<Reverse> reverses, Transport transport) {
         this.url = url;
         this.auth = auth;
         this.keepaliveSec = keepaliveSec;
         this.locals = locals;
         this.reverses = reverses;
+        this.transport = transport;
     }
 
-    /** Connect and block until the WebSocket closes or errors. Throws if the handshake fails. */
+    /**
+     * Connect and block until the carrier closes or errors. Throws if it cannot be
+     * established at all, which the caller treats as a failed attempt.
+     *
+     * <p>Both transports arrive here as a {@link WebSocket} and call back into this class as
+     * a {@link WebSocket.Listener}; see {@link HttpLink} for why the HTTP one is shaped that
+     * way. Everything below this method is the same for either.
+     */
     void run() throws Exception {
-        HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build();
-        WebSocket.Builder b = http.newWebSocketBuilder().connectTimeout(Duration.ofSeconds(15));
-        if (auth != null && !auth.isEmpty()) {
-            b.header("X-Tunnel-Auth", auth);
+        if (transport == Transport.HTTP) {
+            HttpLink.open(url, auth, this); // calls onOpen before it returns
+        } else {
+            HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build();
+            WebSocket.Builder b = http.newWebSocketBuilder().connectTimeout(Duration.ofSeconds(15));
+            if (auth != null && !auth.isEmpty()) {
+                b.header("X-Tunnel-Auth", auth);
+            }
+            b.buildAsync(URI.create(url), this).join(); // completes exceptionally on 401 etc.
         }
-        b.buildAsync(URI.create(url), this).join(); // completes exceptionally on 401 etc.
         closed.await();
     }
 
@@ -141,6 +159,12 @@ final class ClientConnection implements WebSocket.Listener {
         return url;
     }
 
+    /** Which carrier this attempt used. Shown by the health endpoint, which matters when
+     * {@code --transport auto} picked it rather than the operator. */
+    Transport transport() {
+        return transport;
+    }
+
     List<ForwardSpec> locals() {
         return locals;
     }
@@ -171,7 +195,7 @@ final class ClientConnection implements WebSocket.Listener {
         startLocalListeners();
         startKeepalive();
 
-        log.info("tunnel up: {}", url);
+        log.info("tunnel up: {} over {}", url, transport.label());
         webSocket.request(Long.MAX_VALUE);
     }
 

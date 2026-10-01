@@ -61,6 +61,8 @@ class ClientHealthTest {
                 assertEquals("up\n", get(health.port(), "/healthz").body());
                 String status = get(health.port(), "/status").body();
                 assertTrue(status.contains("tunnel client: up"), status);
+                // Which carrier is in use, so an operator can see that auto picked HTTP.
+                assertTrue(status.contains("transport: websocket"), status);
                 assertTrue(status.contains("last pong"), status);
                 assertTrue(status.contains("forward 127.0.0.1:" + localPort), status);
                 assertTrue(status.contains("127.0.0.1:" + echo.port()), status);

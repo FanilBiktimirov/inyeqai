@@ -2,7 +2,9 @@ package com.laptopkit.tunnel.common;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -27,6 +29,27 @@ class FramesTest {
         Frame f = Frames.decode(Frames.open(0x80000001, "h", 65535));
         assertEquals(0x80000001, f.streamId);
         assertEquals(65535, f.port);
+    }
+
+    @Test
+    void carrierFramesRoundTripAndAreRecognisedAsSuch() {
+        for (byte[] encoded : new byte[][]{Frames.ping(), Frames.pong(), Frames.bye()}) {
+            Frame f = Frames.decode(encoded);
+            assertEquals(encoded[0], f.type);
+            assertTrue(Frames.isCarrier(f.type), "type " + f.type + " belongs to the carrier");
+        }
+    }
+
+    @Test
+    void tunnelFramesAreNotCarrierFrames() {
+        // The transports intercept carrier frames and pass everything else to the mux, so a
+        // tunnel frame wrongly classed as the carrier's would simply vanish.
+        assertFalse(Frames.isCarrier(Frames.OPEN));
+        assertFalse(Frames.isCarrier(Frames.DATA));
+        assertFalse(Frames.isCarrier(Frames.CLOSE));
+        assertFalse(Frames.isCarrier(Frames.CONFIG));
+        assertFalse(Frames.isCarrier(Frames.EOF));
+        assertFalse(Frames.isCarrier(Frames.WINDOW));
     }
 
     @Test

@@ -16,8 +16,9 @@ import java.util.Random;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
@@ -26,8 +27,12 @@ import com.laptopkit.tunnel.common.Reverse;
 
 /**
  * Boots the real Spring tunnel server on a random port and drives a real
- * {@link ClientConnection} against it, verifying bytes survive a round trip through the
- * WebSocket in both the local and reverse directions.
+ * {@link ClientConnection} against it, verifying bytes survive a round trip in both the local
+ * and reverse directions.
+ *
+ * <p>Every case runs over both carriers. That is the point of parameterising rather than
+ * writing a second suite: the HTTP fallback is only worth having if it meets the same bar as
+ * the WebSocket, and a copied suite would drift from this one the first time either changed.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class TunnelEndToEndTest {
@@ -47,11 +52,14 @@ class TunnelEndToEndTest {
         echo.close();
     }
 
-    @Test
-    void localForwardCarriesBytes() throws Exception {
+    @ParameterizedTest
+    @EnumSource(Transport.class)
+    @Timeout(60)
+    void localForwardCarriesBytes(Transport transport) throws Exception {
         int localPort = freePort();
         ForwardSpec local = ForwardSpec.parse(localPort + ":127.0.0.1:" + echo.port());
-        ClientConnection conn = new ClientConnection(url(), null, 25, List.of(local), List.of());
+        ClientConnection conn =
+                new ClientConnection(url(), null, 25, List.of(local), List.of(), transport);
         Thread t = runAsync(conn);
         try {
             assertEquals("hello-local", roundTrip(localPort, "hello-local"));
@@ -60,11 +68,14 @@ class TunnelEndToEndTest {
         }
     }
 
-    @Test
-    void reverseForwardCarriesBytes() throws Exception {
+    @ParameterizedTest
+    @EnumSource(Transport.class)
+    @Timeout(60)
+    void reverseForwardCarriesBytes(Transport transport) throws Exception {
         int serverListen = freePort();
         Reverse reverse = ForwardSpec.parse("R:" + serverListen + ":127.0.0.1:" + echo.port()).toReverse();
-        ClientConnection conn = new ClientConnection(url(), null, 25, List.of(), List.of(reverse));
+        ClientConnection conn =
+                new ClientConnection(url(), null, 25, List.of(), List.of(reverse), transport);
         Thread t = runAsync(conn);
         try {
             assertEquals("hello-reverse", roundTrip(serverListen, "hello-reverse"));
@@ -78,13 +89,15 @@ class TunnelEndToEndTest {
      * frame existed, the end of one direction tore the whole stream down and this reply
      * never arrived.
      */
-    @Test
-    @Timeout(30)
-    void halfCloseLetsTheDestinationReplyAfterEof() throws Exception {
+    @ParameterizedTest
+    @EnumSource(Transport.class)
+    @Timeout(60)
+    void halfCloseLetsTheDestinationReplyAfterEof(Transport transport) throws Exception {
         try (EchoServer counting = EchoServer.countingUntilEof()) {
             int localPort = freePort();
             ForwardSpec local = ForwardSpec.parse(localPort + ":127.0.0.1:" + counting.port());
-            ClientConnection conn = new ClientConnection(url(), null, 25, List.of(local), List.of());
+            ClientConnection conn =
+                    new ClientConnection(url(), null, 25, List.of(local), List.of(), transport);
             Thread t = runAsync(conn);
             try (Socket sock = connect(localPort)) {
                 sock.setSoTimeout(20_000);
@@ -102,16 +115,18 @@ class TunnelEndToEndTest {
     }
 
     /** More bytes than one flow-control window, to prove credit is returned and order kept. */
-    @Test
-    @Timeout(120)
-    void bulkTransferSurvivesFlowControl() throws Exception {
+    @ParameterizedTest
+    @EnumSource(Transport.class)
+    @Timeout(180)
+    void bulkTransferSurvivesFlowControl(Transport transport) throws Exception {
         int size = 4 * 1024 * 1024;
         byte[] payload = new byte[size];
         new Random(1234).nextBytes(payload);
 
         int localPort = freePort();
         ForwardSpec local = ForwardSpec.parse(localPort + ":127.0.0.1:" + echo.port());
-        ClientConnection conn = new ClientConnection(url(), null, 25, List.of(local), List.of());
+        ClientConnection conn =
+                new ClientConnection(url(), null, 25, List.of(local), List.of(), transport);
         Thread t = runAsync(conn);
         try (Socket sock = connect(localPort)) {
             sock.setSoTimeout(60_000);

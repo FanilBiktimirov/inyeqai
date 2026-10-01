@@ -95,6 +95,9 @@ public class TunnelApplication {
                         springArgs.add("--tunnel.keepalive=" + value(args, ++i, "--keepalive"));
                 case "--pong-timeout" ->
                         springArgs.add("--tunnel.pong-timeout=" + value(args, ++i, "--pong-timeout"));
+                // Takes no value: the fallback is on unless it is switched off, so there is
+                // nothing to say but "off".
+                case "--no-http-fallback" -> springArgs.add("--tunnel.http-fallback=false");
                 // Repeatable, like chisel's authfile entries; Spring binds a list by index.
                 case "--allow" -> springArgs.add("--tunnel.allow[" + allowCount++ + "]="
                         + value(args, ++i, "--allow"));
@@ -144,8 +147,10 @@ public class TunnelApplication {
                 Usage:
                   java -jar tunnel.jar server [--port 8080] [--host 0.0.0.0] [--auth user:pass]
                                               [--path /tunnel] [--allow REGEX ...]
-                                              [--keepalive 25s] [--pong-timeout 75s] [-v]
+                                              [--keepalive 25s] [--pong-timeout 75s]
+                                              [--no-http-fallback] [-v]
                   java -jar tunnel.jar client [--auth user:pass] [--keepalive 25s] [-v]
+                                              [--transport auto|ws|http]
                                               [--health [bind:]port] <ws-url> <forward> [forward ...]
                   java -jar tunnel.jar healthcheck [url]      probe a health endpoint, exit 0 or 1
 
@@ -160,6 +165,12 @@ public class TunnelApplication {
 
                 -v logs every stream as it opens and closes, with its destination and byte
                 counts. GET /status on the server shows the same thing as a live snapshot.
+
+                --transport picks how frames are carried. "auto" (the default) starts on a
+                WebSocket and falls back to plain HTTP when the upgrade does not survive the
+                network, which is what a proxy stripping "Upgrade" looks like from here. "ws"
+                and "http" pin one. The server serves both at once; --no-http-fallback leaves
+                only the WebSocket endpoint. The client's /status names the one in use.
 
                 --health opens GET /healthz and GET /status on the client. They report the
                 tunnel, not the process: 503 while there is no working connection to the

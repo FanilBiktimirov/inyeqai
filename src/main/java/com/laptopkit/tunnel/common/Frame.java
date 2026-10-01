@@ -51,4 +51,9 @@ public final class Frame {
     static Frame config(List<Reverse> reverses) {
         return new Frame(Frames.CONFIG, 0, null, 0, null, reverses, 0);
     }
+
+    /** A carrier-level frame ({@code PING}, {@code PONG}, {@code BYE}): type and nothing else. */
+    static Frame carrier(byte type) {
+        return new Frame(type, 0, null, 0, null, null, 0);
+    }
 }

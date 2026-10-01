@@ -10,8 +10,9 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.List;
 
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
@@ -22,6 +23,11 @@ import com.laptopkit.tunnel.common.Reverse;
  * The allow list is the difference between a tunnel and an open door into whatever the
  * server can reach. Here it permits exactly one address that no test actually uses, so
  * every real destination must be refused.
+ *
+ * <p>Checked on both carriers, because a transport that bypassed the policy would be a far
+ * worse bug than one that failed to carry bytes: the second kind is obvious, the first kind is
+ * silent. The HTTP fallback reaches the same session handler and so the same policy, and this
+ * is what holds it to that.
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -31,13 +37,15 @@ class TunnelAllowListTest {
     @LocalServerPort
     int serverPort;
 
-    @Test
-    @Timeout(30)
-    void aForwardStreamToADeniedDestinationIsClosed() throws Exception {
+    @ParameterizedTest
+    @EnumSource(Transport.class)
+    @Timeout(60)
+    void aForwardStreamToADeniedDestinationIsClosed(Transport transport) throws Exception {
         try (EchoServer echo = EchoServer.echoing()) {
             int localPort = freePort();
             ForwardSpec local = ForwardSpec.parse(localPort + ":127.0.0.1:" + echo.port());
-            ClientConnection conn = new ClientConnection(url(), null, 25, List.of(local), List.of());
+            ClientConnection conn =
+                    new ClientConnection(url(), null, 25, List.of(local), List.of(), transport);
             Thread t = runAsync(conn);
             try (Socket sock = connect(localPort)) {
                 sock.setSoTimeout(20_000);
@@ -54,13 +62,15 @@ class TunnelAllowListTest {
         }
     }
 
-    @Test
-    @Timeout(30)
-    void aDeniedReverseListenerIsNeverOpened() throws Exception {
+    @ParameterizedTest
+    @EnumSource(Transport.class)
+    @Timeout(60)
+    void aDeniedReverseListenerIsNeverOpened(Transport transport) throws Exception {
         try (EchoServer echo = EchoServer.echoing()) {
             int serverListen = freePort();
             Reverse reverse = ForwardSpec.parse("R:" + serverListen + ":127.0.0.1:" + echo.port()).toReverse();
-            ClientConnection conn = new ClientConnection(url(), null, 25, List.of(), List.of(reverse));
+            ClientConnection conn =
+                    new ClientConnection(url(), null, 25, List.of(), List.of(reverse), transport);
             Thread t = runAsync(conn);
             try {
                 // Give the server time to have acted on the CONFIG, then confirm the port

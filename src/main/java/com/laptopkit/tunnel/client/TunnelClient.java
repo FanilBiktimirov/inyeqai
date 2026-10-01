@@ -37,6 +37,8 @@ public final class TunnelClient {
         String auth = null;
         int keepaliveSec = 25;
         String health = null;
+        // null means auto: try a WebSocket, fall back to HTTP if it does not survive.
+        Transport forced = null;
         List<String> positional = new ArrayList<>();
 
         for (int i = 0; i < args.length; i++) {
@@ -45,6 +47,7 @@ public final class TunnelClient {
                 case "--keepalive" -> keepaliveSec = parseDuration(value(args, ++i, "--keepalive"));
                 case "-v", "--verbose" -> enableVerbose();
                 case "--health" -> health = value(args, ++i, "--health");
+                case "--transport" -> forced = parseTransport(value(args, ++i, "--transport"));
                 default -> positional.add(args[i]);
             }
         }
@@ -55,7 +58,8 @@ public final class TunnelClient {
         List<String> unknown = positional.stream().filter(a -> a.startsWith("-")).toList();
         if (!unknown.isEmpty()) {
             System.err.println("client: unrecognised argument(s): " + String.join(" ", unknown));
-            System.err.println("client: known flags are --auth, --keepalive, --health, -v/--verbose");
+            System.err.println("client: known flags are --auth, --keepalive, --health, "
+                    + "--transport, -v/--verbose");
             return;
         }
 
@@ -82,7 +86,10 @@ public final class TunnelClient {
             return;
         }
 
-        log.info("connecting to {} ({} local, {} reverse forward(s))", url, locals.size(), reverses.size());
+        Transport transport = forced == null ? Transport.WEBSOCKET : forced;
+        log.info("connecting to {} over {} ({} local, {} reverse forward(s))", url,
+                forced == null ? "websocket, falling back to http if it does not hold" : transport.label(),
+                locals.size(), reverses.size());
 
         // The health endpoint outlives any single connection: it has to keep answering
         // while the client is between reconnect attempts, which is exactly when a probe
@@ -106,29 +113,54 @@ public final class TunnelClient {
         }
 
         int attempt = 0;
-        while (true) {
+        // Interruption is the way out: a client asked to stop should stop, not reconnect.
+        // Nothing interrupts this thread in normal operation, where the loop runs forever.
+        while (!Thread.currentThread().isInterrupted()) {
             Duration uptime;
             String reason;
-            ClientConnection conn = new ClientConnection(url, auth, keepaliveSec, locals, reverses);
+            ClientConnection conn =
+                    new ClientConnection(url, auth, keepaliveSec, locals, reverses, transport);
             live.set(conn);
             try {
                 conn.run();
                 uptime = conn.uptime();
                 reason = "connection closed after " + uptime.toSeconds() + "s";
+            } catch (InterruptedException e) {
+                conn.stop();
+                live.set(null);
+                Thread.currentThread().interrupt();
+                return;
             } catch (Exception e) {
                 uptime = conn.uptime();
                 reason = "connect failed (" + rootCause(e) + ")";
             }
             // Only a connection that actually settled resets the backoff; a link failing
             // on every attempt must keep backing off instead of hammering the server.
-            attempt = uptime.compareTo(SETTLED) >= 0 ? 0 : attempt;
+            boolean settled = uptime.compareTo(SETTLED) >= 0;
+            attempt = settled ? 0 : attempt;
             long delayMs = backoff(attempt);
             attempt++;
             // Clear it before sleeping, so a probe during the backoff sees "down" rather
             // than the corpse of the connection that just died.
             live.set(null);
-            log.warn("{}, reconnecting in {} ms", reason, delayMs);
-            Thread.sleep(delayMs);
+            if (forced == null && !settled) {
+                // An attempt that never settled does not say which carrier was at fault, so
+                // the other one gets the next try. This is what carries a client through a
+                // network that refuses the WebSocket upgrade, or accepts it and then eats
+                // the frames, without anyone having to notice and pass --transport by hand.
+                // A transport that does settle is kept, because it demonstrably works.
+                transport = transport.other();
+                log.warn("{}, trying the {} transport, reconnecting in {} ms",
+                        reason, transport.label(), delayMs);
+            } else {
+                log.warn("{}, reconnecting in {} ms", reason, delayMs);
+            }
+            try {
+                Thread.sleep(delayMs);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
         }
     }
 
@@ -185,6 +217,20 @@ public final class TunnelClient {
             }
             return n;
         }
+    }
+
+    /**
+     * The {@code --transport} value.
+     *
+     * @return the transport to pin, or null for {@code auto}: the client then starts on a
+     *         WebSocket and alternates after any attempt that fails to settle, so a network
+     *         hostile to the upgrade ends up on HTTP by itself
+     */
+    static Transport parseTransport(String raw) {
+        if (raw.trim().equalsIgnoreCase("auto")) {
+            return null;
+        }
+        return Transport.parse(raw);
     }
 
     /** Exponential backoff, {@code MIN << attempt} capped at {@code MAX}. */

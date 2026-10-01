@@ -18,10 +18,19 @@ import java.util.List;
  *                                                     client -> server: open reverse listeners
  *   EOF    [5][streamId:4]                            sender is done writing (half-close)
  *   WINDOW [6][streamId:4][credit:4]                  receiver drained credit bytes
+ *   PING   [7]                                        carrier keepalive, expects a PONG
+ *   PONG   [8]                                        answer to a PING
+ *   BYE    [9]                                        carrier is closing on purpose
  * </pre>
  *
  * The {@code streamId} top bit marks the originator (0 = client, 1 = server) so ids
  * allocated independently on both ends never collide.
+ *
+ * <p>{@code PING}, {@code PONG} and {@code BYE} belong to the carrier, not to the tunnel:
+ * they exist because the HTTP fallback transport has no ping, pong or close frames of its
+ * own. Both HTTP ends answer and consume them inside their transport layer, so neither mux
+ * ever sees one. Over a WebSocket they are never sent at all &mdash; that carrier has its
+ * own.
  *
  * <p>{@code EOF} mirrors a TCP half-close: the peer stops reading that direction but keeps
  * writing the other one, which plain {@code CLOSE} would have cut off. {@code WINDOW}
@@ -37,8 +46,14 @@ public final class Frames {
     public static final byte CONFIG = 4;
     public static final byte EOF = 5;
     public static final byte WINDOW = 6;
+    public static final byte PING = 7;
+    public static final byte PONG = 8;
+    public static final byte BYE = 9;
 
     private static final Charset UTF8 = StandardCharsets.UTF_8;
+    private static final byte[] PING_BYTES = {PING};
+    private static final byte[] PONG_BYTES = {PONG};
+    private static final byte[] BYE_BYTES = {BYE};
 
     private Frames() {
     }
@@ -66,6 +81,28 @@ public final class Frames {
 
     public static byte[] window(int streamId, int credit) {
         return ByteBuffer.allocate(1 + 4 + 4).put(WINDOW).putInt(streamId).putInt(credit).array();
+    }
+
+    /**
+     * Carrier keepalive. Returns a shared array because these frames are immutable,
+     * single-byte, and sent on a timer: allocating one each time would be pure waste.
+     */
+    public static byte[] ping() {
+        return PING_BYTES;
+    }
+
+    public static byte[] pong() {
+        return PONG_BYTES;
+    }
+
+    /** Carrier closing on purpose, so the peer can release the session at once. */
+    public static byte[] bye() {
+        return BYE_BYTES;
+    }
+
+    /** True for the carrier-level frames the transports handle themselves. */
+    public static boolean isCarrier(byte type) {
+        return type == PING || type == PONG || type == BYE;
     }
 
     public static byte[] config(List<Reverse> reverses) {
@@ -137,6 +174,9 @@ public final class Frames {
                     throw new IllegalArgumentException("non-positive window credit " + credit);
                 }
                 return Frame.window(id, credit);
+            }
+            case PING, PONG, BYE -> {
+                return Frame.carrier(type);
             }
             case CONFIG -> {
                 int n = b.getShort() & 0xffff;

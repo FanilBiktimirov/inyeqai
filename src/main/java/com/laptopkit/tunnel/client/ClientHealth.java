@@ -129,6 +129,9 @@ final class ClientHealth implements AutoCloseable {
             return sb.toString();
         }
         sb.append("server: ").append(c.url()).append('\n');
+        // Which carrier is in use, because with --transport auto the client chose it, not the
+        // operator: "http" here is the visible sign that the WebSocket did not survive.
+        sb.append("transport: ").append(c.transport().label()).append('\n');
         sb.append("connected for ").append(duration(c.uptime())).append('\n');
 
         Optional<Duration> pong = c.sinceLastPong();

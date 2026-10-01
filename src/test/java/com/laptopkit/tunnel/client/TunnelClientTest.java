@@ -1,6 +1,7 @@
 package com.laptopkit.tunnel.client;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -42,6 +43,35 @@ class TunnelClientTest {
     void rejectsBadDurations() {
         assertThrows(IllegalArgumentException.class, () -> TunnelClient.parseDuration("soon"));
         assertThrows(IllegalArgumentException.class, () -> TunnelClient.parseDuration("-5s"));
+    }
+
+    @Test
+    void transportNamesParse() {
+        assertEquals(Transport.WEBSOCKET, TunnelClient.parseTransport("ws"));
+        assertEquals(Transport.WEBSOCKET, TunnelClient.parseTransport("websocket"));
+        assertEquals(Transport.HTTP, TunnelClient.parseTransport("http"));
+        assertEquals(Transport.HTTP, TunnelClient.parseTransport(" HTTP "));
+    }
+
+    @Test
+    void autoIsTheAbsenceOfAChoice() {
+        // Null rather than a third enum value: "auto" is not a transport the client can open,
+        // it is the decision to find out which one works.
+        assertNull(TunnelClient.parseTransport("auto"));
+        assertNull(TunnelClient.parseTransport("AUTO"));
+    }
+
+    @Test
+    void rejectsUnknownTransports() {
+        assertThrows(IllegalArgumentException.class, () -> TunnelClient.parseTransport("socks"));
+        assertThrows(IllegalArgumentException.class, () -> TunnelClient.parseTransport(""));
+    }
+
+    @Test
+    void theHttpEndpointsMirrorTheWebSocketUrl() {
+        assertEquals("https://alfa.example/tunnel/http", HttpLink.httpBase("wss://alfa.example/tunnel"));
+        assertEquals("http://127.0.0.1:8080/tunnel/http", HttpLink.httpBase("ws://127.0.0.1:8080/tunnel"));
+        assertEquals("https://alfa.example/custom/http", HttpLink.httpBase("wss://alfa.example/custom/"));
     }
 
     @Test

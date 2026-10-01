@@ -18,6 +18,10 @@ tunnel:
   #     - "^127\\.0\\.0\\.1:3129$"
   #     - "^R:0\\.0\\.0\\.0:3130$"
   allow: []
+  # Serve the tunnel over plain HTTP as well, at {path}/http, for clients on networks where
+  # the WebSocket upgrade does not survive. Set to false to leave only the WebSocket
+  # endpoint (--no-http-fallback on the command line).
+  http-fallback: true
   # How often to ping each client. Zero disables server-side keepalive and reaping.
   keepalive: 25s
   # Silence after which a client counts as gone: its session is closed and its reverse

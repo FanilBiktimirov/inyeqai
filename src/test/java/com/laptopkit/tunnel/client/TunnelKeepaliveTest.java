@@ -12,8 +12,9 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
@@ -28,6 +29,12 @@ import com.laptopkit.tunnel.common.ForwardSpec;
  * several idle seconds therefore proves two things at once: the container answers the
  * client's pings, and the JDK client answers the server's. Either half missing would show
  * up here as a dropped tunnel rather than a silent regression in production.
+ *
+ * <p>Both carriers are checked, because they prove this in different ways. A WebSocket has
+ * ping and pong frames of its own; the HTTP transport has to carry its keepalive as ordinary
+ * frames and answer them in its own transport layer, on both ends. An idle HTTP tunnel that
+ * survives here is the evidence that it does, and that the server's reaper is not quietly
+ * closing live HTTP sessions for want of a pong it never recognised.
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -37,13 +44,15 @@ class TunnelKeepaliveTest {
     @LocalServerPort
     int serverPort;
 
-    @Test
+    @ParameterizedTest
+    @EnumSource(Transport.class)
     @Timeout(60)
-    void anIdleTunnelSurvivesBothPongTimeouts() throws Exception {
+    void anIdleTunnelSurvivesBothPongTimeouts(Transport transport) throws Exception {
         try (EchoServer echo = EchoServer.echoing()) {
             int localPort = freePort();
             ForwardSpec local = ForwardSpec.parse(localPort + ":127.0.0.1:" + echo.port());
-            ClientConnection conn = new ClientConnection(url(), null, 1, List.of(local), List.of());
+            ClientConnection conn =
+                    new ClientConnection(url(), null, 1, List.of(local), List.of(), transport);
             Thread t = runAsync(conn);
             try {
                 assertEquals("before", roundTrip(localPort, "before"));
@@ -59,13 +68,15 @@ class TunnelKeepaliveTest {
     }
 
     /** chisel documents {@code 0s} as "no keepalive"; it must not take the client down. */
-    @Test
+    @ParameterizedTest
+    @EnumSource(Transport.class)
     @Timeout(60)
-    void keepaliveOffStillCarriesTraffic() throws Exception {
+    void keepaliveOffStillCarriesTraffic(Transport transport) throws Exception {
         try (EchoServer echo = EchoServer.echoing()) {
             int localPort = freePort();
             ForwardSpec local = ForwardSpec.parse(localPort + ":127.0.0.1:" + echo.port());
-            ClientConnection conn = new ClientConnection(url(), null, 0, List.of(local), List.of());
+            ClientConnection conn =
+                    new ClientConnection(url(), null, 0, List.of(local), List.of(), transport);
             Thread t = runAsync(conn);
             try {
                 assertEquals("quiet", roundTrip(localPort, "quiet"));
