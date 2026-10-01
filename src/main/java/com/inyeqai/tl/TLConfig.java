@@ -1,7 +1,9 @@
 package com.inyeqai.tl;
 
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 
 import com.inyeqai.tl.InyeqaiApplication;
 import com.inyeqai.tl.client.Transport;
@@ -17,6 +19,12 @@ import com.inyeqai.tl.client.Transport;
  * <p>Поля намеренно не {@code final}. Константу компилятор заинлайнит, и из работающего
  * отладчика её уже не поменять; а эти — поменять можно, так что значение правится на
  * брейкпоинте до строки, которая его читает.
+ *
+ * <p>Исключение — {@link #MODE}, {@link #AUTH}, {@link #CLIENT_URL} и {@link #FORWARDS}: их
+ * можно задать переменными окружения {@code TLCFG_<имя поля>}. Так настройки запуска в
+ * {@code .idea/runConfigurations} выбирают сценарий («локально» или «клиент к стенду»), не
+ * трогая этот файл, а секрет стенда остаётся в {@code .idea}, которая в git не попадает.
+ * Переменные читаются один раз, при загрузке класса; дальше это обычные поля.
  *
  * <p>Порты по умолчанию высокие, и это не случайно. Обычные подозреваемые — 3128, 3129, 3130,
  * 8080, 8090 — заняты живой цепочкой, под которую туннель и писался, и отладочный запуск,
@@ -40,7 +48,7 @@ public final class TLConfig {
         HEALTHCHECK
     }
 
-    public static Mode MODE = Mode.BOTH;
+    public static Mode MODE = Mode.valueOf(env("MODE", "BOTH").toUpperCase(Locale.ROOT));
 
     /** Логировать каждый поток на открытии и закрытии, с обеих сторон. При отладке — полезно. */
     public static boolean VERBOSE = true;
@@ -52,8 +60,12 @@ public final class TLConfig {
     /** Где слушает сервер. Пусто — значит на всех интерфейсах. */
     public static String SERVER_HOST = "127.0.0.1";
 
-    /** Общий секрет, который должен предъявить клиент. Пусто — проверка выключена. */
-    public static String AUTH = "TL:debug";
+    /**
+     * Общий секрет, который должен предъявить клиент. Пусто — проверка выключена. Секрет стенда
+     * сюда не пишется: ветка уходит на GitHub. Его отдаёт настройка запуска через
+     * {@code TLCFG_AUTH}.
+     */
+    public static String AUTH = env("AUTH", "TL:debug");
 
     /** Путь, на который смонтирован WebSocket-эндпойнт; запасной HTTP-транспорт живёт под ним. */
     public static String PATH = "/tl";
@@ -80,7 +92,7 @@ public final class TLConfig {
      * достучался до сервера, которого вы только что переставили на другой порт, — смотреть
      * надо сюда.
      */
-    public static String CLIENT_URL = "ws://127.0.0.1:18080/tl";
+    public static String CLIENT_URL = env("CLIENT_URL", "ws://127.0.0.1:18080/tl");
 
     /**
      * Чем везти кадры. {@code null} — авто: начать с WebSocket и свалиться на HTTP, если
@@ -101,10 +113,10 @@ public final class TLConfig {
      * HTTP-порт сервера, так что {@code curl http://127.0.0.1:18128/healthz} прогоняет весь
      * путь целиком.
      */
-    public static List<String> FORWARDS = List.of(
+    public static List<String> FORWARDS = envList("FORWARDS", List.of(
             "18128:127.0.0.1:18080"
             // , "R:18130:127.0.0.1:18080"   // обратный: слушает сервер, дозванивается клиент
-    );
+    ));
 
     /** Где слушает собственный health-эндпойнт клиента. Ноль — выключить. */
     public static int HEALTH_PORT = 19000;
@@ -121,5 +133,20 @@ public final class TLConfig {
             return "ws://127.0.0.1:" + SERVER_PORT + PATH;
         }
         return CLIENT_URL;
+    }
+
+    /** Значение из {@code TLCFG_<name>}, если оно задано, иначе {@code fallback}. */
+    private static String env(String name, String fallback) {
+        String v = System.getenv("TLCFG_" + name);
+        return v == null || v.isBlank() ? fallback : v.trim();
+    }
+
+    /** То же для списка: элементы через запятую. */
+    private static List<String> envList(String name, List<String> fallback) {
+        String v = System.getenv("TLCFG_" + name);
+        if (v == null || v.isBlank()) {
+            return fallback;
+        }
+        return Arrays.stream(v.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
     }
 }
