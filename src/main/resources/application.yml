@@ -37,4 +37,4 @@ tunnel:
 logging:
   level:
     root: INFO
-    com.laptopkit.tunnel: INFO
+    com.inyeqai.tunnel: INFO

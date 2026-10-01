@@ -1,7 +1,7 @@
-# chisel-tunnel — TCP поверх WebSocket на Java + Spring Boot
+# inyeqai — TCP поверх WebSocket на Java + Spring Boot
 
 > **Ветка `debug/run-from-fields`.** Аргументов командной строки нет: всё, что раньше
-> задавалось флагами, лежит полями в [`TunnelConfig`](src/main/java/com/laptopkit/tunnel/TunnelConfig.java).
+> задавалось флагами, лежит полями в [`TunnelConfig`](src/main/java/com/inyeqai/tunnel/TunnelConfig.java).
 > Запуск — обычный `main` в `TunnelApplication`, без run configuration. Ниже по тексту
 > флаги вида `--auth` упоминаются как названия параметров; соответствие полям — в таблице
 > в разделе «Запуск». В основную ветку это не вливается: разбор аргументов удалён вместе
@@ -39,11 +39,11 @@ mvn -o package        # сборка + тесты
 mvn -o package -DskipTests
 ```
 
-Результат — `target/tunnel.jar` (исполняемый fat-jar).
+Результат — `target/inyeqai.jar` (исполняемый fat-jar).
 
 ## Запуск
 
-Открыть [`TunnelConfig`](src/main/java/com/laptopkit/tunnel/TunnelConfig.java), поправить поля,
+Открыть [`TunnelConfig`](src/main/java/com/inyeqai/tunnel/TunnelConfig.java), поправить поля,
 запустить `TunnelApplication` зелёной стрелкой. Больше ничего.
 
 Главное поле — `MODE`:
@@ -119,7 +119,7 @@ compose-файле, и в документации, а разбирать их �
 У клиента есть свой эндпойнт, `--health [bind:]порт` (по умолчанию слушает loopback):
 
 ```bash
-java -jar tunnel.jar client --auth tunnel:СЕКРЕТ --health 9000 wss://host/ 3128:127.0.0.1:3129
+java -jar inyeqai.jar client --auth tunnel:СЕКРЕТ --health 9000 wss://host/ 3128:127.0.0.1:3129
 ```
 
 ```
@@ -147,7 +147,7 @@ GET /status    тот же вердикт с числами, которыми о
 порт — плохой размен. Запускает JVM на каждую проверку, так что интервал берите щедрый:
 
 ```bash
-java -jar tunnel.jar healthcheck http://127.0.0.1:9000/healthz
+java -jar inyeqai.jar healthcheck http://127.0.0.1:9000/healthz
 ```
 
 Те же значения читаются из `application.yml` / переменных окружения (`SERVER_PORT`,
@@ -158,7 +158,7 @@ java -jar tunnel.jar healthcheck http://127.0.0.1:9000/healthz
 включая `169.254.169.254` и всё, что слушает на его localhost. Для цепочки это два правила:
 
 ```bash
-java -jar tunnel.jar server --port 8080 --auth tunnel:СЕКРЕТ \
+java -jar inyeqai.jar server --port 8080 --auth tunnel:СЕКРЕТ \
     --allow '^127\.0\.0\.1:3129$' \
     --allow '^R:0\.0\.0\.0:3130$'
 ```
@@ -178,7 +178,7 @@ java -jar tunnel.jar server --port 8080 --auth tunnel:СЕКРЕТ \
 выводит адрес запасных эндпойнтов из того же `wss://…`.
 
 ```bash
-java -jar tunnel.jar client --auth tunnel:СЕКРЕТ --transport auto wss://host/ 3128:127.0.0.1:3129
+java -jar inyeqai.jar client --auth tunnel:СЕКРЕТ --transport auto wss://host/ 3128:127.0.0.1:3129
 ```
 
 | `--transport` | Что делает |

@@ -11,10 +11,10 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.laptopkit</groupId>
-    <artifactId>chisel-tunnel</artifactId>
+    <groupId>com.inyeqai</groupId>
+    <artifactId>inyeqai</artifactId>
     <version>0.1.0</version>
-    <name>chisel-tunnel</name>
+    <name>inyeqai</name>
     <description>TCP-over-WebSocket tunnel (chisel-like client/server) on Spring Boot</description>
 
     <properties>
@@ -37,13 +37,13 @@
     </dependencies>
 
     <build>
-        <finalName>tunnel</finalName>
+        <finalName>inyeqai</finalName>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
-                    <mainClass>com.laptopkit.tunnel.TunnelApplication</mainClass>
+                    <mainClass>com.inyeqai.tunnel.TunnelApplication</mainClass>
                 </configuration>
             </plugin>
         </plugins>
