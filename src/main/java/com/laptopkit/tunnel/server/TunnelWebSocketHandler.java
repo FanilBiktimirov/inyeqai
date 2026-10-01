@@ -106,6 +106,16 @@ public class TunnelWebSocketHandler extends BinaryWebSocketHandler {
             for (ServerSocket ss : listeners) {
                 ports.add(ss.getLocalPort());
             }
+            // Only the HTTP carrier can be resumed, so only it has anything to say here. Asking
+            // it directly beats inventing a general notion of carrier state for a question one
+            // carrier cannot answer at all, and a tunnel being resumed every few seconds is
+            // exactly the kind of quiet degradation /status exists to show.
+            long resumes = 0;
+            int holding = 0;
+            if (ws instanceof HttpCarrierSession carrier) {
+                resumes = carrier.resumes();
+                holding = carrier.unackedBytes();
+            }
             return new SessionSnapshot(
                     ws.getId(),
                     ws.getRemoteAddress() == null ? "?" : ws.getRemoteAddress().toString(),
@@ -116,7 +126,9 @@ public class TunnelWebSocketHandler extends BinaryWebSocketHandler {
                     mux.bytesToPeer(),
                     mux.bytesFromPeer(),
                     ports,
-                    mux.streams());
+                    mux.streams(),
+                    resumes,
+                    holding);
         }
 
         void send(byte[] bytes) {

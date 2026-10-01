@@ -40,7 +40,25 @@ class HttpTransportAuthTest {
     void postingFramesIntoAnUnknownSessionWithoutATokenIsRefused() throws Exception {
         // 401 rather than 404: an unauthenticated caller must not even learn whether a
         // session id exists.
-        assertEquals(401, post("/tunnel/http/up/http-whatever", null).statusCode());
+        assertEquals(401, post("/tunnel/http/up/http-whatever?batch=1", null).statusCode());
+    }
+
+    @Test
+    void withoutATokenNothingAboutASessionIsRevealed() throws Exception {
+        // The guarantee is about sessions, not about the endpoint: a 401 already tells a caller
+        // the path exists, and that is fine. What must not differ is the answer for a session
+        // that exists and one that does not, or an unauthenticated caller could enumerate them.
+        HttpResponse<String> real = post("/tunnel/http/connect", "tunnel:secret");
+        String existing = real.body().trim();
+        assertEquals(401, post("/tunnel/http/up/" + existing + "?batch=1", null).statusCode());
+        assertEquals(401, post("/tunnel/http/up/http-no-such-session?batch=1", null).statusCode());
+    }
+
+    @Test
+    void aBatchWithoutANumberIsRefused() throws Exception {
+        // Past the token, a batch with no number cannot be told from a retry, so it is refused
+        // rather than guessed at.
+        assertEquals(400, post("/tunnel/http/up/http-whatever", "tunnel:secret").statusCode());
     }
 
     @Test

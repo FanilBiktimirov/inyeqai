@@ -21,16 +21,17 @@ import java.util.List;
  *   PING   [7]                                        carrier keepalive, expects a PONG
  *   PONG   [8]                                        answer to a PING
  *   BYE    [9]                                        carrier is closing on purpose
+ *   ACK    [10][through:8]                            peer holds every downstream frame to here
  * </pre>
  *
  * The {@code streamId} top bit marks the originator (0 = client, 1 = server) so ids
  * allocated independently on both ends never collide.
  *
- * <p>{@code PING}, {@code PONG} and {@code BYE} belong to the carrier, not to the tunnel:
- * they exist because the HTTP fallback transport has no ping, pong or close frames of its
- * own. Both HTTP ends answer and consume them inside their transport layer, so neither mux
- * ever sees one. Over a WebSocket they are never sent at all &mdash; that carrier has its
- * own.
+ * <p>{@code PING}, {@code PONG}, {@code BYE} and {@code ACK} belong to the carrier, not to the
+ * tunnel: they exist because the HTTP fallback transport has no ping, pong or close frames of
+ * its own, and no way for a reconnecting client to say what it already received. Both HTTP ends
+ * answer and consume them inside their transport layer, so neither mux ever sees one. Over a
+ * WebSocket they are never sent at all &mdash; that carrier has its own, and never resumes.
  *
  * <p>{@code EOF} mirrors a TCP half-close: the peer stops reading that direction but keeps
  * writing the other one, which plain {@code CLOSE} would have cut off. {@code WINDOW}
@@ -49,6 +50,7 @@ public final class Frames {
     public static final byte PING = 7;
     public static final byte PONG = 8;
     public static final byte BYE = 9;
+    public static final byte ACK = 10;
 
     private static final Charset UTF8 = StandardCharsets.UTF_8;
     private static final byte[] PING_BYTES = {PING};
@@ -100,9 +102,17 @@ public final class Frames {
         return BYE_BYTES;
     }
 
+    /**
+     * Confirm every downstream frame up to {@code through}. This is what lets the server drop
+     * frames from its retransmit buffer, and what a resuming client's claim is checked against.
+     */
+    public static byte[] ack(long through) {
+        return ByteBuffer.allocate(1 + 8).put(ACK).putLong(through).array();
+    }
+
     /** True for the carrier-level frames the transports handle themselves. */
     public static boolean isCarrier(byte type) {
-        return type == PING || type == PONG || type == BYE;
+        return type == PING || type == PONG || type == BYE || type == ACK;
     }
 
     public static byte[] config(List<Reverse> reverses) {
@@ -177,6 +187,13 @@ public final class Frames {
             }
             case PING, PONG, BYE -> {
                 return Frame.carrier(type);
+            }
+            case ACK -> {
+                long through = b.getLong();
+                if (through < 0) {
+                    throw new IllegalArgumentException("negative ack sequence " + through);
+                }
+                return Frame.ack(through);
             }
             case CONFIG -> {
                 int n = b.getShort() & 0xffff;

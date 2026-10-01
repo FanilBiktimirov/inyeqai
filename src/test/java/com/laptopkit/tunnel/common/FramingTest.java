@@ -1,6 +1,7 @@
 package com.laptopkit.tunnel.common;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -67,6 +68,64 @@ class FramingTest {
         byte[] claim = {(byte) 0xff, (byte) 0xff, (byte) 0xff, (byte) 0xff};
         DataInputStream in = Framing.reader(new ByteArrayInputStream(claim));
         assertThrows(IOException.class, () -> Framing.read(in));
+    }
+
+    @Test
+    void sequencedFramesRoundTrip() throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        Framing.write(out, 1L, Frames.ping());
+        Framing.write(out, 2L, Frames.data(7, "abc".getBytes(StandardCharsets.UTF_8), 0, 3));
+        Framing.write(out, Long.MAX_VALUE, Frames.bye());
+
+        DataInputStream in = Framing.reader(new ByteArrayInputStream(out.toByteArray()));
+        Framing.Sequenced first = Framing.readSequenced(in);
+        assertEquals(1L, first.seq());
+        assertArrayEquals(Frames.ping(), first.frame());
+
+        Framing.Sequenced second = Framing.readSequenced(in);
+        assertEquals(2L, second.seq());
+        assertEquals(7, Frames.decode(second.frame()).streamId);
+
+        assertEquals(Long.MAX_VALUE, Framing.readSequenced(in).seq());
+        assertNull(Framing.readSequenced(in), "a response that ends between frames has ended");
+    }
+
+    @Test
+    void aSequencedFrameCutShortIsAnErrorNotAnEnding() {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try {
+            Framing.write(out, 5L, new byte[]{1, 2, 3, 4});
+        } catch (IOException e) {
+            throw new AssertionError(e);
+        }
+        // Everything but the last payload byte: this is what a severed response looks like, and
+        // mistaking it for the end would leave the reader believing it holds a frame it does not.
+        byte[] truncated = new byte[out.size() - 1];
+        System.arraycopy(out.toByteArray(), 0, truncated, 0, truncated.length);
+        DataInputStream in = Framing.reader(new ByteArrayInputStream(truncated));
+        assertThrows(IOException.class, () -> Framing.readSequenced(in));
+    }
+
+    @Test
+    void aHeaderCutInHalfIsAnErrorToo() {
+        // Four bytes: enough to start a sequence number, not enough to finish one. Returning
+        // "ended" here would silently drop whatever frame was on its way.
+        DataInputStream in = Framing.reader(new ByteArrayInputStream(new byte[]{0, 0, 0, 0}));
+        assertThrows(IOException.class, () -> Framing.readSequenced(in));
+    }
+
+    @Test
+    void sequenceNumbersStartAtOne() {
+        // Zero means "I have nothing" when a client asks to resume, so it can never be a real
+        // frame number; a stream claiming it is out of step.
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try {
+            Framing.write(out, 0L, Frames.ping());
+        } catch (IOException e) {
+            throw new AssertionError(e);
+        }
+        DataInputStream in = Framing.reader(new ByteArrayInputStream(out.toByteArray()));
+        assertThrows(IOException.class, () -> Framing.readSequenced(in));
     }
 
     @Test

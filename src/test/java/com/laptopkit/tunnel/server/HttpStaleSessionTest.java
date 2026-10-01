@@ -82,7 +82,7 @@ class HttpStaleSessionTest {
         Framing.write(body, Frames.config(
                 List.of(new Reverse("127.0.0.1", reversePort, "127.0.0.1", 9)))); // 9 = discard
         HttpResponse<Void> res = http.send(
-                HttpRequest.newBuilder(uri("/tunnel/http/up/" + id))
+                HttpRequest.newBuilder(uri("/tunnel/http/up/" + id + "?batch=1"))
                         .timeout(Duration.ofSeconds(10))
                         .header("Content-Type", "application/octet-stream")
                         .POST(HttpRequest.BodyPublishers.ofByteArray(body.toByteArray())).build(),

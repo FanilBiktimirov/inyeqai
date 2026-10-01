@@ -32,6 +32,19 @@ class FramesTest {
     }
 
     @Test
+    void ackRoundTripsItsSequence() {
+        Frame f = Frames.decode(Frames.ack(123456789012L));
+        assertEquals(Frames.ACK, f.type);
+        assertEquals(123456789012L, f.ackThrough);
+        assertTrue(Frames.isCarrier(f.type));
+    }
+
+    @Test
+    void ackZeroMeansNothingReceivedYet() {
+        assertEquals(0L, Frames.decode(Frames.ack(0)).ackThrough);
+    }
+
+    @Test
     void carrierFramesRoundTripAndAreRecognisedAsSuch() {
         for (byte[] encoded : new byte[][]{Frames.ping(), Frames.pong(), Frames.bye()}) {
             Frame f = Frames.decode(encoded);

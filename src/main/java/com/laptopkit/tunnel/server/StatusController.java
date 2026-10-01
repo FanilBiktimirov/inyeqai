@@ -88,6 +88,12 @@ class StatusController {
             sb.append('\n').append("session ").append(s.id()).append(" from ").append(s.remote()).append('\n');
             sb.append("  up ").append(duration(s.upMillis()))
                     .append(", last pong ").append(duration(s.lastPongMillis())).append(" ago").append('\n');
+            if (s.resumes() > 0 || s.holdingBytes() > 0) {
+                // Printed only when there is something to print, so a WebSocket session and a
+                // healthy idle HTTP one stay as quiet as they were.
+                sb.append("  carrier resumed ").append(s.resumes()).append(" time(s), holding ")
+                        .append(Mux.bytes(s.holdingBytes())).append(" unconfirmed").append('\n');
+            }
             sb.append("  reverse listeners: ")
                     .append(s.reversePorts().isEmpty() ? "none" : s.reversePorts()).append('\n');
             sb.append("  streams open ").append(s.openStreams())

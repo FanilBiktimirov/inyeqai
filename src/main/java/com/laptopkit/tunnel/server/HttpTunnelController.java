@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import org.springframework.web.socket.BinaryMessage;
@@ -39,9 +40,10 @@ import com.laptopkit.tunnel.common.Framing;
  * while ordinary requests keep working.
  *
  * <pre>
- *   POST {path}/http/connect     open a session, returns its id
- *   GET  {path}/http/down/{id}   one long-lived response, carries frames server -&gt; client
- *   POST {path}/http/up/{id}     a batch of frames, client -&gt; server; repeated
+ *   POST {path}/http/connect            open a session, returns its id
+ *   GET  {path}/http/down/{id}?from=N   a long-lived response carrying frames server -&gt; client,
+ *                                       continuing after frame N (0 = from the beginning)
+ *   POST {path}/http/up/{id}?batch=N    batch N of frames, client -&gt; server; repeated
  * </pre>
  *
  * <p>The shape is asymmetric on purpose. Downstream is one streaming response, because the
@@ -53,9 +55,25 @@ import com.laptopkit.tunnel.common.Framing;
  *
  * <p>Sessions outlive individual requests, so none of this is tied to a request thread;
  * every session detail is handled by {@link TunnelWebSocketHandler} through
- * {@link HttpCarrierSession}, which explains the arrangement. There is deliberately no
- * resumption: if the downstream response breaks, the session dies and the client reconnects
- * from scratch with its usual backoff, exactly as it does when a WebSocket drops.
+ * {@link HttpCarrierSession}, which explains the arrangement.
+ *
+ * <p>Both directions can be resumed, and they have to be resumed differently, because a broken
+ * response and a broken request leave different questions open:
+ *
+ * <ul>
+ *   <li><b>Downstream</b> ends without saying how much of it arrived. So frames are numbered and
+ *       kept until acknowledged, and {@code from=N} asks for everything after the last one the
+ *       client holds. See {@link HttpCarrierSession#pumpTo}.
+ *   <li><b>Upstream</b> fails without saying whether the server applied it. So each POST carries
+ *       a batch number: the same number again is a retry to answer but not apply, and a number
+ *       that skips one means frames are missing and the session cannot continue. Retrying
+ *       without this would duplicate bytes inside a stream, which is corruption neither end can
+ *       detect.
+ * </ul>
+ *
+ * <p>The status codes are what the client steers by: 409 means wait and ask again, because
+ * another response is still being wound up, while 404 and 410 mean the session is beyond saving
+ * and the tunnel has to be built anew.
  */
 @RestController
 @ConditionalOnProperty(name = "tunnel.http-fallback", matchIfMissing = true)
@@ -105,6 +123,7 @@ class HttpTunnelController {
     @GetMapping("/down/{id}")
     ResponseEntity<StreamingResponseBody> down(
             @PathVariable String id,
+            @RequestParam(name = "from", defaultValue = "0") long from,
             @RequestHeader(name = "X-Tunnel-Auth", required = false) String token) {
         if (!secret.accepts(token)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
@@ -113,11 +132,21 @@ class HttpTunnelController {
         if (carrier == null) {
             return ResponseEntity.notFound().build();
         }
+        if (from < 0) {
+            return ResponseEntity.badRequest().build();
+        }
+        // Checked before the response is committed, so an impossible request gets a status the
+        // client can act on instead of a stream that dies on its first frame.
+        if (!carrier.canResumeFrom(from)) {
+            log.warn("cannot resume {} from frame {}, ending the session", id, from);
+            carrier.close(CloseStatus.SERVER_ERROR);
+            return ResponseEntity.status(HttpStatus.GONE).build();
+        }
         if (!carrier.attachDown()) {
             return ResponseEntity.status(HttpStatus.CONFLICT).build();
         }
-        log.debug("downstream attached for {}", id);
-        StreamingResponseBody body = carrier::pumpTo;
+        log.debug("downstream attached for {} from frame {}", id, from);
+        StreamingResponseBody body = out -> carrier.pumpTo(out, from);
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .header("Cache-Control", "no-store")
@@ -130,10 +159,17 @@ class HttpTunnelController {
     @PostMapping("/up/{id}")
     ResponseEntity<String> up(
             @PathVariable String id,
+            // Taken as optional and checked below, so that a request missing it is still
+            // refused for the right reason: nothing gets past the token check, and a caller
+            // without one learns nothing about what it got wrong.
+            @RequestParam(name = "batch", defaultValue = "-1") long batch,
             @RequestHeader(name = "X-Tunnel-Auth", required = false) String token,
             InputStream body) throws IOException {
         if (!secret.accepts(token)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("unauthorized\n");
+        }
+        if (batch < 1) {
+            return ResponseEntity.badRequest().body("missing or bad batch number\n");
         }
         HttpCarrierSession carrier = carriers.get(id);
         if (carrier == null) {
@@ -144,7 +180,21 @@ class HttpTunnelController {
         ReentrantLock lock = carrier.inboundLock();
         lock.lock();
         try {
+            if (!carrier.beginBatch(batch)) {
+                // A retry of a batch already applied. Answering without applying it again is the
+                // whole point: the client had no way to tell that our last answer was lost, and
+                // the same frames twice would duplicate bytes inside a stream.
+                log.debug("upstream batch {} on {} was already applied", batch, id);
+                return ResponseEntity.noContent().build();
+            }
             deliver(carrier, body);
+            // Marked only now: a batch that failed half-way through cannot be retried, so the
+            // session is ended below instead and the client builds a new one.
+            carrier.batchApplied(batch);
+        } catch (HttpCarrierSession.CannotResume e) {
+            log.warn("ending {}: {}", id, e.getMessage());
+            carrier.close(CloseStatus.SERVER_ERROR);
+            return ResponseEntity.status(HttpStatus.GONE).body(e.getMessage() + "\n");
         } catch (IOException e) {
             log.debug("bad upstream batch on {}: {}", id, e.toString());
             carrier.close(CloseStatus.BAD_DATA);
@@ -171,7 +221,7 @@ class HttpTunnelController {
             if (frame.length == 0) {
                 throw new IOException("empty frame");
             }
-            if (!handleCarrierFrame(carrier, frame[0])) {
+            if (!handleCarrierFrame(carrier, frame)) {
                 // Everything else is tunnel traffic and goes to the handler untouched, as
                 // if the container had delivered a WebSocket message.
                 dispatch(carrier, new BinaryMessage(frame));
@@ -198,9 +248,12 @@ class HttpTunnelController {
      *
      * @return true when the frame was the carrier's business
      */
-    private boolean handleCarrierFrame(HttpCarrierSession carrier, byte type) throws IOException {
-        switch (type) {
+    private boolean handleCarrierFrame(HttpCarrierSession carrier, byte[] frame) throws IOException {
+        switch (frame[0]) {
             case Frames.PING -> carrier.enqueue(Frames.pong());
+            // Lets the server drop what it was holding in case this client had to come back for
+            // it; see HttpCarrierSession for why "written" is not "delivered" here.
+            case Frames.ACK -> carrier.onAck(Frames.decode(frame).ackThrough);
             // Reported as a pong so the handler's liveness tracking, and the "last pong"
             // line on /status, mean the same thing on both transports.
             case Frames.PONG -> dispatch(carrier, new PongMessage());

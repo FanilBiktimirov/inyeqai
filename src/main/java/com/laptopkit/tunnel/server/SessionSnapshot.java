@@ -10,7 +10,10 @@ import com.laptopkit.tunnel.common.StreamInfo;
  * reply &mdash; the number that says whether a session is actually alive or merely still
  * connected.
  *
- * @param streams the live streams of this session
+ * @param streams       the live streams of this session
+ * @param resumes       how many times this session's carrier had to be resumed; always zero for
+ *                      a WebSocket, which has no such notion
+ * @param holdingBytes  bytes written but not yet confirmed, kept in case they must be sent again
  */
 public record SessionSnapshot(
         String id,
@@ -22,5 +25,7 @@ public record SessionSnapshot(
         long bytesToClient,
         long bytesFromClient,
         List<Integer> reversePorts,
-        List<StreamInfo> streams) {
+        List<StreamInfo> streams,
+        long resumes,
+        int holdingBytes) {
 }
