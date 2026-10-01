@@ -1,0 +1,30 @@
+server:
+  port: 8080
+
+spring:
+  main:
+    banner-mode: "off"
+
+tunnel:
+  # Shared secret the client sends as X-Tunnel-Auth. Empty = open (dev only).
+  # Override with --auth on the command line or TUNNEL_AUTH in the environment.
+  auth: ""
+  # Path the WebSocket endpoint is mounted at; the client appends it if the URL has none.
+  path: /tunnel
+  # Destinations clients may reach: regexes over "host:port" for forward streams and
+  # "R:bind:port" for reverse listeners. Empty = anything the server can reach.
+  # Example for the proxy chain (one way in, one way back):
+  #   allow:
+  #     - "^127\\.0\\.0\\.1:3129$"
+  #     - "^R:0\\.0\\.0\\.0:3130$"
+  allow: []
+  # How often to ping each client. Zero disables server-side keepalive and reaping.
+  keepalive: 25s
+  # Silence after which a client counts as gone: its session is closed and its reverse
+  # listeners freed, so the same client can rebind them when it reconnects.
+  pong-timeout: 75s
+
+logging:
+  level:
+    root: INFO
+    com.laptopkit.tunnel: INFO
