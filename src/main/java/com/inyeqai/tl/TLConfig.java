@@ -92,7 +92,7 @@ public final class TLConfig {
     public static int CLIENT_KEEPALIVE_SECONDS = 25;
 
     /**
-     * Пробросы, в синтаксисе chisel: {@code [bind:]port:host:port}, с {@code R:} для
+     * Пробросы в синтаксисе {@code [bind:]port:host:port}, с {@code R:} для
      * обратного. Хранятся текстом, потому что так они написаны везде ещё — в README, в
      * compose-файле, в обычной командной строке — и плохой проброс громко падает на старте.
      *

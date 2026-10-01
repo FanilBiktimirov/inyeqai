@@ -68,7 +68,7 @@ class TLKeepaliveTest {
         }
     }
 
-    /** chisel документирует {@code 0s} как «без keepalive»; это не должно ронять клиент. */
+    /** {@code 0s} означает «без keepalive»; это не должно ронять клиент. */
     @ParameterizedTest
     @EnumSource(Transport.class)
     @Timeout(60)

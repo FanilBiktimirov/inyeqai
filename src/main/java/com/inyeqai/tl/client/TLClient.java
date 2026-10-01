@@ -149,7 +149,7 @@ public final class TLClient {
     static String normalizeUrl(String url) {
         String u = url;
         if (!u.startsWith("ws://") && !u.startsWith("wss://")) {
-            // принимаем и http/https, как chisel, и отображаем в ws-схему
+            // принимаем и http/https и отображаем в ws-схему
             if (u.startsWith("https://")) {
                 u = "wss://" + u.substring("https://".length());
             } else if (u.startsWith("http://")) {

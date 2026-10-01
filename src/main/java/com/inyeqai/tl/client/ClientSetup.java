@@ -45,7 +45,7 @@ public record ClientSetup(
         reverses = List.copyOf(reverses);
     }
 
-    /** Разложить строки пробросов в стиле chisel на локальные и обратные. */
+    /** Разложить строки пробросов на локальные и обратные. */
     public static ClientSetup of(String url, String auth, int keepaliveSeconds,
                                  List<String> forwards, Transport transport,
                                  String healthHost, int healthPort) {

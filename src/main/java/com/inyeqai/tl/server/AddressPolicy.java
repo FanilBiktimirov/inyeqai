@@ -6,9 +6,8 @@ import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 /**
- * Куда клиентам разрешено ходить — в том же виде, что и списки адресов в {@code --authfile}
- * у chisel: регулярные выражения, которые матчатся против {@code host:port} для прямых потоков
- * и против {@code R:bind:port} для обратных слушателей.
+ * Куда клиентам разрешено ходить: регулярные выражения, которые матчатся против
+ * {@code host:port} для прямых потоков и против {@code R:bind:port} для обратных слушателей.
  *
  * <p>Пустой список разрешает всё — так себя вёл сервер и раньше; по этой же причине на
  * публичном адресе он безопасен только когда есть и токен, и список.
@@ -44,7 +43,7 @@ final class AddressPolicy {
         return matches(host + ":" + port);
     }
 
-    /** Обратный слушатель в виде {@code R:bind:port} — нотация как у chisel. */
+    /** Обратный слушатель в виде {@code R:bind:port}. */
     boolean allowsReverse(String bindHost, int port) {
         return matches("R:" + bindHost + ":" + port);
     }
