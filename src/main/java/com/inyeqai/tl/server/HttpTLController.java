@@ -76,8 +76,8 @@ import com.inyeqai.tl.common.Framing;
  * поднимать заново.
  */
 @RestController
-@ConditionalOnProperty(name = "TL.http-fallback", matchIfMissing = true)
-@RequestMapping("${TL.path:/TL}/http")
+@ConditionalOnProperty(name = "tl.http-fallback", matchIfMissing = true)
+@RequestMapping("${tl.path:/tl}/http")
 class HttpTLController {
 
     private static final Logger log = LoggerFactory.getLogger(HttpTLController.class);
@@ -95,7 +95,7 @@ class HttpTLController {
     HttpTLController(TLWebSocketHandler handler, SharedSecret secret) {
         this.handler = handler;
         this.secret = secret;
-        log.info("HTTP fallback transport enabled; set TL.http-fallback=false to remove it");
+        log.info("HTTP fallback transport enabled; set tl.http-fallback=false to remove it");
     }
 
     @PostMapping("/connect")

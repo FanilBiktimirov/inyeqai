@@ -1,8 +1,8 @@
 # inyeqai — TCP поверх WebSocket на Java + Spring Boot
 
 > **Ветка `debug/run-from-fields`.** Аргументов командной строки нет: всё, что раньше
-> задавалось флагами, лежит полями в [`TLConfig`](src/main/java/com/inyeqai/TL/TLConfig.java).
-> Запуск — обычный `main` в `TLApplication`, без run configuration. Ниже по тексту
+> задавалось флагами, лежит полями в [`TLConfig`](src/main/java/com/inyeqai/tl/TLConfig.java).
+> Запуск — обычный `main` в `InyeqaiApplication`, без run configuration. Ниже по тексту
 > флаги вида `--auth` упоминаются как названия параметров; соответствие полям — в таблице
 > в разделе «Запуск». В основную ветку это не вливается: разбор аргументов удалён вместе
 > с тестами на него.
@@ -12,7 +12,7 @@
 (`server` / `client`), как у chisel.
 
 ```
-claude.exe / agent-desk ──HTTPS_Py──▶ client 127.0.0.1:3128 ──wss──▶ server (публичный)
+claude.exe / agent-desk ──HTTPS_PROXY──▶ client 127.0.0.1:3128 ──wss──▶ server (публичный)
                                            (вход в туннель)                  │
                                                                               ▼
                                                          dial host:port, выход в сеть
@@ -43,8 +43,8 @@ mvn -o package -DskipTests
 
 ## Запуск
 
-Открыть [`TLConfig`](src/main/java/com/inyeqai/TL/TLConfig.java), поправить поля,
-запустить `TLApplication` зелёной стрелкой. Больше ничего.
+Открыть [`TLConfig`](src/main/java/com/inyeqai/tl/TLConfig.java), поправить поля,
+запустить `InyeqaiApplication` зелёной стрелкой. Больше ничего.
 
 Главное поле — `MODE`:
 
@@ -82,7 +82,7 @@ curl -H "X-TL-Auth: TL:debug" http://127.0.0.1:18080/status
 | `server --keepalive` | `SERVER_KEEPALIVE` |
 | `--pong-timeout` | `PONG_TIMEOUT` |
 | `--no-http-fallback` | `HTTP_FALLBACK = false` |
-| `TL.status` | `STATUS` |
+| `tl.status` | `STATUS` |
 | `client <ws-url>` | `CLIENT_URL` |
 | `client <forward> …` | `FORWARDS`, список строк в том же синтаксисе chisel |
 | `client --keepalive` | `CLIENT_KEEPALIVE_SECONDS` |
@@ -105,7 +105,7 @@ compose-файле, и в документации, а разбирать их �
 | `--port` | порт HTTP/WebSocket | `8080` |
 | `--host` | адрес прослушивания | все интерфейсы |
 | `--auth` | общий секрет; клиент шлёт его в заголовке `X-TL-Auth` | пусто = без проверки |
-| `--path` | путь WebSocket-эндпойнта; запасной HTTP живёт под ним (`{path}/http/…`) | `/TL` |
+| `--path` | путь WebSocket-эндпойнта; запасной HTTP живёт под ним (`{path}/http/…`) | `/tl` |
 | `--allow` | куда клиентам можно; регулярка, флаг повторяется | пусто = куда угодно |
 | `--keepalive` | как часто пинговать клиентов | `25s` |
 | `--pong-timeout` | молчание, после которого сессия считается мёртвой | `75s` |
@@ -174,7 +174,7 @@ java -jar inyeqai.jar server --port 8080 --auth TL:СЕКРЕТ \
 ### Если WebSocket не проходит
 
 Сервер отдаёт туннель двумя способами сразу: обычным WebSocket на `--path` и запасным — на
-простом HTTP под тем же путём (`/TL/http/...`). Клиенту отдельный URL не нужен, он сам
+простом HTTP под тем же путём (`/tl/http/...`). Клиенту отдельный URL не нужен, он сам
 выводит адрес запасных эндпойнтов из того же `wss://…`.
 
 ```bash
@@ -273,7 +273,7 @@ session 078460e9-cb11-12c1-2ce9-6bde683e1216 from /127.0.0.1:54481
 ```
 
 Самое полезное тут — `last pong`: он отличает сессию живую от всего лишь подключённой.
-Отключить эндпойнт целиком: `TL.status: false`.
+Отключить эндпойнт целиком: `tl.status: false`.
 
 Id потока печатается беззнаковым. Сервер помечает свои id старшим битом, поэтому как `int`
 они отрицательные; беззнаковый вид даёт на обеих сторонах туннеля один и тот же токен, по
@@ -344,9 +344,9 @@ mvn -o test
 | `HttpResumeProtocolTest` | повтор пачки подтверждается, но не применяется дважды; пропуск номера пачки закрывает сессию (410); просьба продолжить с кадра, которого не было, закрывает сессию; сессия и её обратный слушатель переживают конец ответа |
 | `HttpStaleSessionTest` | замолчавшая HTTP-сессия (кто-то открыл поток вниз и больше не отвечает) теряет свой обратный порт по pong-таймауту |
 | `HttpTransportAuthTest` | все три HTTP-эндпойнта требуют токен; без него 401, и `/up` не раскрывает, существует ли сессия |
-| `HttpFallbackDisabledTest` | `TL.http-fallback=false` убирает эндпойнты (404), `/healthz` продолжает работать |
+| `HttpFallbackDisabledTest` | `tl.http-fallback=false` убирает эндпойнты (404), `/healthz` продолжает работать |
 | `StatusEndpointTest` | `/status` без токена и с неверным токеном — 401; при живом потоке показывает его адрес, счётчики байт и корректную строку потока |
-| `StatusDisabledTest` | `TL.status=false` убирает эндпойнт (404), `/healthz` продолжает работать |
+| `StatusDisabledTest` | `tl.status=false` убирает эндпойнт (404), `/healthz` продолжает работать |
 | `ClientHealthTest` | при живом туннеле — 200 `up`; после разрыва тот же живой процесс отдаёт 503 `down`; с выключенным keepalive — `unknown` с объяснением |
 
 Проверки протокола и форматирования — отдельными модульными тестами (`FramesTest`,

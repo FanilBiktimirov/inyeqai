@@ -32,7 +32,7 @@ import com.inyeqai.tl.common.Reverse;
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = {"TL.keepalive=1s", "TL.pong-timeout=600s"})
+        properties = {"tl.keepalive=1s", "tl.pong-timeout=600s"})
 class TLStaleSessionTest {
 
     @LocalServerPort
@@ -46,7 +46,7 @@ class TLStaleSessionTest {
             Reverse reverse = ForwardSpec.parse("R:" + reversePort + ":127.0.0.1:" + echo.port()).toReverse();
 
             try (MuteWebSocketClient zombie =
-                         new MuteWebSocketClient("127.0.0.1", serverPort, "/TL", null)) {
+                         new MuteWebSocketClient("127.0.0.1", serverPort, "/tl", null)) {
                 zombie.sendBinary(Frames.config(List.of(reverse)));
                 awaitListening(reversePort);
 
@@ -69,7 +69,7 @@ class TLStaleSessionTest {
     }
 
     private String url() {
-        return "ws://127.0.0.1:" + serverPort + "/TL";
+        return "ws://127.0.0.1:" + serverPort + "/tl";
     }
 
     private Thread runAsync(ClientConnection conn) {

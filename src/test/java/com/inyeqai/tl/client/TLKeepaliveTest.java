@@ -39,7 +39,7 @@ import com.inyeqai.tl.common.ForwardSpec;
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = {"TL.keepalive=1s", "TL.pong-timeout=3s"})
+        properties = {"tl.keepalive=1s", "tl.pong-timeout=3s"})
 class TLKeepaliveTest {
 
     @LocalServerPort
@@ -89,7 +89,7 @@ class TLKeepaliveTest {
     }
 
     private String url() {
-        return "ws://127.0.0.1:" + serverPort + "/TL";
+        return "ws://127.0.0.1:" + serverPort + "/tl";
     }
 
     private Thread runAsync(ClientConnection conn) {

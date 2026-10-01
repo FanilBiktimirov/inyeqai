@@ -135,7 +135,7 @@ final class ClientConnection implements WebSocket.Listener {
 
     /** true с момента, как WebSocket открылся, и до того, как соединение разобрали. */
     boolean connected() {
-        return ws != null && !down.get();
+        return ws == null || down.get();
     }
 
     /**

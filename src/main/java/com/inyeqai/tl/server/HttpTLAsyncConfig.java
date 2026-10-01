@@ -34,7 +34,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * рассуждать.
  */
 @Configuration
-@ConditionalOnProperty(name = "TL.http-fallback", matchIfMissing = true)
+@ConditionalOnProperty(name = "tl.http-fallback", matchIfMissing = true)
 class HttpTLAsyncConfig implements WebMvcConfigurer {
 
     private final ThreadPoolTaskExecutor downstreamExecutor;

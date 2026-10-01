@@ -52,15 +52,15 @@ public final class TLClient {
             try {
                 new ClientHealth(setup.healthHost(), setup.healthPort(), live::get);
             } catch (IOException e) {
-                System.err.println("client: cannot open the health endpoint on "
-                        + setup.healthHost() + ":" + setup.healthPort() + ": " + e);
+                log.debug("cannot open the health endpoint on {}:{}: {}",
+                        setup.healthHost(), setup.healthPort(), e.toString());
                 return;
             } catch (NoClassDefFoundError e) {
                 // В рантайме, обрезанном через jlink, может не оказаться jdk.httpserver.
                 // Говорим, какого модуля не хватает: сам по себе NoClassDefFoundError называет
                 // класс, который никто не свяжет с health-эндпойнтом.
-                System.err.println("client: the health endpoint needs the jdk.httpserver module, "
-                        + "which this Java runtime does not have (" + e.getMessage() + ")");
+                log.debug("the health endpoint needs the jdk.httpserver module, "
+                        + "which this Java runtime does not have ({})", e.getMessage());
                 return;
             }
         }
@@ -127,7 +127,7 @@ public final class TLClient {
      * выродился в предупреждение, а не в ClassCastException на старте.
      */
     public static void enableVerbose() {
-        org.slf4j.Logger pkg = LoggerFactory.getLogger("com.inyeqai.TL");
+        org.slf4j.Logger pkg = LoggerFactory.getLogger("com.inyeqai.tl");
         if (pkg instanceof ch.qos.logback.classic.Logger logback) {
             logback.setLevel(ch.qos.logback.classic.Level.DEBUG);
             log.info("verbose logging on: every stream will be logged as it opens and closes");
@@ -161,7 +161,7 @@ public final class TLClient {
         URI parsed = URI.create(u);
         String path = parsed.getPath();
         if (path == null || path.isEmpty() || path.equals("/")) {
-            u = stripTrailingSlash(u) + "/TL";
+            u = stripTrailingSlash(u) + "/tl";
         }
         return u;
     }

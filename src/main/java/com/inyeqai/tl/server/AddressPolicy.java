@@ -28,7 +28,7 @@ final class AddressPolicy {
                     compiled.add(Pattern.compile(p.trim()));
                 } catch (PatternSyntaxException e) {
                     throw new IllegalArgumentException(
-                            "TL.allow: bad regular expression '" + p + "': " + e.getDescription(), e);
+                            "tl.allow: bad regular expression '" + p + "': " + e.getDescription(), e);
                 }
             }
         }

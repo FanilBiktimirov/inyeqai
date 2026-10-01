@@ -9,10 +9,10 @@ class TLClientTest {
 
     @Test
     void bareHostBecomesWssWithTheDefaultPath() {
-        assertEquals("wss://alfa.example/TL", TLClient.normalizeUrl("alfa.example"));
-        assertEquals("wss://alfa.example/TL", TLClient.normalizeUrl("wss://alfa.example/"));
-        assertEquals("wss://alfa.example/TL", TLClient.normalizeUrl("https://alfa.example"));
-        assertEquals("ws://127.0.0.1:8080/TL", TLClient.normalizeUrl("http://127.0.0.1:8080"));
+        assertEquals("wss://alfa.example/tl", TLClient.normalizeUrl("alfa.example"));
+        assertEquals("wss://alfa.example/tl", TLClient.normalizeUrl("wss://alfa.example/"));
+        assertEquals("wss://alfa.example/tl", TLClient.normalizeUrl("https://alfa.example"));
+        assertEquals("ws://127.0.0.1:8080/tl", TLClient.normalizeUrl("http://127.0.0.1:8080"));
     }
 
     @Test
@@ -22,8 +22,8 @@ class TLClientTest {
 
     @Test
     void theHttpEndpointsMirrorTheWebSocketUrl() {
-        assertEquals("https://alfa.example/TL/http", HttpLink.httpBase("wss://alfa.example/TL"));
-        assertEquals("http://127.0.0.1:8080/TL/http", HttpLink.httpBase("ws://127.0.0.1:8080/TL"));
+        assertEquals("https://alfa.example/tl/http", HttpLink.httpBase("wss://alfa.example/tl"));
+        assertEquals("http://127.0.0.1:8080/tl/http", HttpLink.httpBase("ws://127.0.0.1:8080/tl"));
         assertEquals("https://alfa.example/custom/http", HttpLink.httpBase("wss://alfa.example/custom/"));
     }
 

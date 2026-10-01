@@ -12,13 +12,13 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
 /**
- * {@code TL.http-fallback=false} должен убрать HTTP-транспорт, а не просто сделать его
+ * {@code tl.http-fallback=false} должен убрать HTTP-транспорт, а не просто сделать его
  * нежелательным. Когда администратор выключает запасной транспорт, он обычно сужает то, что
  * сервер выставляет наружу, поэтому всё ещё отвечающий эндпойнт сводит всю затею на нет.
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = {"TL.auth=TL:off", "TL.http-fallback=false"})
+        properties = {"tl.auth=TL:off", "tl.http-fallback=false"})
 class HttpFallbackDisabledTest {
 
     @LocalServerPort
@@ -27,7 +27,7 @@ class HttpFallbackDisabledTest {
     @Test
     void theHttpTransportIsGoneEvenWithTheRightToken() throws Exception {
         HttpRequest req = HttpRequest.newBuilder(
-                        URI.create("http://127.0.0.1:" + serverPort + "/TL/http/connect"))
+                        URI.create("http://127.0.0.1:" + serverPort + "/tl/http/connect"))
                 .header("X-TL-Auth", "TL:off")
                 .POST(HttpRequest.BodyPublishers.noBody())
                 .build();

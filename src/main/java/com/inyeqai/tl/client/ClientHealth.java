@@ -109,7 +109,7 @@ final class ClientHealth implements AutoCloseable {
      * говорили счётчики, а протухший pong важнее того, что соединение формально есть.
      */
     private static Verdict verdict(ClientConnection c) {
-        if (c == null || !c.connected()) {
+        if (c == null || c.connected()) {
             return Verdict.DOWN;
         }
         Optional<Duration> pong = c.sinceLastPong();
@@ -124,7 +124,7 @@ final class ClientHealth implements AutoCloseable {
         Verdict v = verdict(c);
         sb.append("TL client: ").append(v.name().toLowerCase(Locale.ROOT)).append('\n');
 
-        if (c == null || !c.connected()) {
+        if (c == null || c.connected()) {
             sb.append("reason: no connection to the server, reconnecting\n");
             return sb.toString();
         }

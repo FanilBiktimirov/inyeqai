@@ -9,6 +9,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
@@ -31,6 +33,8 @@ import com.inyeqai.tl.client.TLClient;
 @SpringBootApplication
 public class InyeqaiApplication {
 
+    private static final Logger log = LoggerFactory.getLogger(InyeqaiApplication.class);
+
     public static void main(String[] args) throws Exception {
         switch (TLConfig.MODE) {
             case SERVER -> {
@@ -51,11 +55,8 @@ public class InyeqaiApplication {
      * брейкпоинте, остаётся коротким и узнаваемым, а не растущим из потока пула.
      */
     private static void runBoth() throws Exception {
-        ConfigurableApplicationContext context = startServer();
-        try {
+        try (ConfigurableApplicationContext ignored = startServer()) {
             runClient();
-        } finally {
-            context.close();
         }
     }
 
@@ -76,19 +77,19 @@ public class InyeqaiApplication {
         if (!TLConfig.SERVER_HOST.isBlank()) {
             props.put("server.address", TLConfig.SERVER_HOST);
         }
-        props.put("TL.auth", TLConfig.AUTH);
-        props.put("TL.path", TLConfig.PATH);
-        props.put("TL.status", TLConfig.STATUS);
-        props.put("TL.http-fallback", TLConfig.HTTP_FALLBACK);
-        props.put("TL.keepalive", TLConfig.SERVER_KEEPALIVE);
-        props.put("TL.pong-timeout", TLConfig.PONG_TIMEOUT);
+        props.put("tl.auth", TLConfig.AUTH);
+        props.put("tl.path", TLConfig.PATH);
+        props.put("tl.status", TLConfig.STATUS);
+        props.put("tl.http-fallback", TLConfig.HTTP_FALLBACK);
+        props.put("tl.keepalive", TLConfig.SERVER_KEEPALIVE);
+        props.put("tl.pong-timeout", TLConfig.PONG_TIMEOUT);
         // Список Spring привязывает по индексу — так же, как раньше повторяющийся флаг.
         List<String> allow = TLConfig.ALLOW;
         for (int i = 0; i < allow.size(); i++) {
-            props.put("TL.allow[" + i + "]", allow.get(i));
+            props.put("tl.allow[" + i + "]", allow.get(i));
         }
         if (TLConfig.VERBOSE) {
-            props.put("logging.level.com.inyeqai.TL", "DEBUG");
+            props.put("logging.level.com.inyeqai.tl", "DEBUG");
         }
         return new SpringApplicationBuilder(com.inyeqai.tl.InyeqaiApplication.class)
                 .initializers(context -> context.getEnvironment().getPropertySources()
@@ -112,9 +113,7 @@ public class InyeqaiApplication {
                 TLClient.enableVerbose();
             }
         } catch (IllegalArgumentException e) {
-            // Плохое поле должно сказать, какое именно, и сказать до того, как что-то
-            // начнёт слушать.
-            System.err.println("TLConfig: " + e.getMessage());
+            log.debug("TLConfig: {}", e.getMessage());
             return;
         }
         TLClient.run(setup);
@@ -136,12 +135,12 @@ public class InyeqaiApplication {
                     .send(HttpRequest.newBuilder(URI.create(url))
                                     .timeout(Duration.ofSeconds(5)).GET().build(),
                             HttpResponse.BodyHandlers.ofString());
-            // Печатаем в любом случае: docker эту выдачу сохраняет, а "stale" против "down" —
+            // Пишем в любом случае: docker эту выдачу сохраняет, а "stale" против "down" —
             // это разница между замолчавшим пиром и полным отсутствием подключения.
-            System.out.print(res.body());
+            log.debug("healthcheck: {}", res.body().strip());
             System.exit(res.statusCode() >= 200 && res.statusCode() < 300 ? 0 : 1);
         } catch (Exception e) {
-            System.out.println("unreachable: " + e);
+            log.debug("healthcheck: unreachable: {}", e.toString());
             System.exit(1);
         }
     }

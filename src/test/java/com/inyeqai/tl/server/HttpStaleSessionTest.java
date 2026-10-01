@@ -38,7 +38,7 @@ import com.inyeqai.tl.common.Reverse;
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = {"TL.keepalive=1s", "TL.pong-timeout=2s"})
+        properties = {"tl.keepalive=1s", "tl.pong-timeout=2s"})
 class HttpStaleSessionTest {
 
     @LocalServerPort
@@ -53,7 +53,7 @@ class HttpStaleSessionTest {
         int reversePort = freePort();
 
         HttpResponse<String> connect = http.send(
-                HttpRequest.newBuilder(uri("/TL/http/connect"))
+                HttpRequest.newBuilder(uri("/tl/http/connect"))
                         .POST(HttpRequest.BodyPublishers.noBody()).build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, connect.statusCode());
@@ -62,7 +62,7 @@ class HttpStaleSessionTest {
         // Открываем поток вниз и оставляем открытым. Назад ничего не постится, поэтому до
         // сервера не доходит ни один pong: именно так отсюда выглядит исчезнувший клиент.
         HttpResponse<InputStream> down = http.send(
-                HttpRequest.newBuilder(uri("/TL/http/down/" + id)).GET().build(),
+                HttpRequest.newBuilder(uri("/tl/http/down/" + id)).GET().build(),
                 HttpResponse.BodyHandlers.ofInputStream());
         assertEquals(200, down.statusCode());
 
@@ -82,7 +82,7 @@ class HttpStaleSessionTest {
         Framing.write(body, Frames.config(
                 List.of(new Reverse("127.0.0.1", reversePort, "127.0.0.1", 9)))); // 9 — discard
         HttpResponse<Void> res = http.send(
-                HttpRequest.newBuilder(uri("/TL/http/up/" + id + "?batch=1"))
+                HttpRequest.newBuilder(uri("/tl/http/up/" + id + "?batch=1"))
                         .timeout(Duration.ofSeconds(10))
                         .header("Content-Type", "application/octet-stream")
                         .POST(HttpRequest.BodyPublishers.ofByteArray(body.toByteArray())).build(),

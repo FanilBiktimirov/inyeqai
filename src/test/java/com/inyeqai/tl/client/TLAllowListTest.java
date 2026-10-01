@@ -31,7 +31,7 @@ import com.inyeqai.tl.common.Reverse;
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "TL.allow[0]=^127\\.0\\.0\\.1:1$")
+        properties = "tl.allow[0]=^127\\.0\\.0\\.1:1$")
 class TLAllowListTest {
 
     @LocalServerPort
@@ -86,7 +86,7 @@ class TLAllowListTest {
     }
 
     private String url() {
-        return "ws://127.0.0.1:" + serverPort + "/TL";
+        return "ws://127.0.0.1:" + serverPort + "/tl";
     }
 
     private Thread runAsync(ClientConnection conn) {

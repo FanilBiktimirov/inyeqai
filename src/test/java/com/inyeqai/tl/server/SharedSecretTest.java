@@ -27,6 +27,6 @@ class SharedSecretTest {
         assertFalse(s.accepts(""));
         assertFalse(s.accepts("TL:hunter"), "a prefix must not be accepted");
         assertFalse(s.accepts("TL:hunter2x"));
-        assertFalse(s.accepts("TL:hunter2"));
+        assertFalse(s.accepts("tl:hunter2"), "the token is case-sensitive");
     }
 }

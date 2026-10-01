@@ -92,7 +92,7 @@ class HttpFallbackTest {
 
     /** @param transport null — это auto, именно про него первый тест */
     private static ClientSetup setup(int PyPort, int localPort, int echoPort, Transport transport) {
-        return ClientSetup.of("ws://127.0.0.1:" + PyPort + "/TL", null, 5,
+        return ClientSetup.of("ws://127.0.0.1:" + PyPort + "/tl", null, 5,
                 List.of(localPort + ":127.0.0.1:" + echoPort), transport, "127.0.0.1", 0);
     }
 

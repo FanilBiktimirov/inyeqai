@@ -56,7 +56,7 @@ public final class TLConfig {
     public static String AUTH = "TL:debug";
 
     /** Путь, на который смонтирован WebSocket-эндпойнт; запасной HTTP-транспорт живёт под ним. */
-    public static String PATH = "/TL";
+    public static String PATH = "/tl";
 
     /**
      * Куда клиентам можно дозваниваться — регулярками по {@code host:port} и
@@ -80,7 +80,7 @@ public final class TLConfig {
      * достучался до сервера, которого вы только что переставили на другой порт, — смотреть
      * надо сюда.
      */
-    public static String CLIENT_URL = "ws://127.0.0.1:18080/TL";
+    public static String CLIENT_URL = "ws://127.0.0.1:18080/tl";
 
     /**
      * Чем везти кадры. {@code null} — авто: начать с WebSocket и свалиться на HTTP, если

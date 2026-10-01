@@ -11,10 +11,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
-/** {@code TL.status=false} должен убрать эндпойнт, а не просто спрятать его содержимое. */
+/** {@code tl.status=false} должен убрать эндпойнт, а не просто спрятать его содержимое. */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = {"TL.auth=TL:off", "TL.status=false"})
+        properties = {"tl.auth=TL:off", "tl.status=false"})
 class StatusDisabledTest {
 
     @LocalServerPort

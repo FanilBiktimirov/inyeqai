@@ -68,7 +68,7 @@ public class TLWebSocketHandler extends BinaryWebSocketHandler {
         this.props = props;
         this.policy = new AddressPolicy(props.getAllow());
         if (policy.unrestricted()) {
-            log.info("no TL.allow list: clients may reach any address this server can");
+            log.info("no tl.allow list: clients may reach any address this server can");
         } else {
             log.info("restricting clients to {} allowed address pattern(s)", props.getAllow().size());
         }

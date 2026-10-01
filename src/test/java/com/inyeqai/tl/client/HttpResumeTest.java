@@ -54,7 +54,7 @@ class HttpResumeTest {
             int localPort = freePort();
             ForwardSpec local = ForwardSpec.parse(localPort + ":127.0.0.1:" + echo.port());
             ClientConnection conn = new ClientConnection(
-                    "ws://127.0.0.1:" + Py.port() + "/TL", null, 25,
+                    "ws://127.0.0.1:" + Py.port() + "/tl", null, 25,
                     List.of(local), List.of(), Transport.HTTP);
             Thread t = runAsync(conn);
             try (Socket sock = connect(localPort)) {
@@ -99,7 +99,7 @@ class HttpResumeTest {
             int localPort = freePort();
             ForwardSpec local = ForwardSpec.parse(localPort + ":127.0.0.1:" + echo.port());
             ClientConnection conn = new ClientConnection(
-                    "ws://127.0.0.1:" + Py.port() + "/TL", null, 25,
+                    "ws://127.0.0.1:" + Py.port() + "/tl", null, 25,
                     List.of(local), List.of(), Transport.HTTP);
             Thread t = runAsync(conn);
             try (Socket sock = connect(localPort)) {

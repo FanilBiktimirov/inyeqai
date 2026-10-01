@@ -181,7 +181,7 @@ class HttpResumeProtocolTest {
 
     private String connect() throws Exception {
         HttpResponse<String> res = http.send(
-                HttpRequest.newBuilder(uri("/TL/http/connect"))
+                HttpRequest.newBuilder(uri("/tl/http/connect"))
                         .POST(HttpRequest.BodyPublishers.noBody()).build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, res.statusCode());
@@ -190,7 +190,7 @@ class HttpResumeProtocolTest {
 
     private InputStream attach(String id, long from) throws Exception {
         HttpResponse<InputStream> res = http.send(
-                HttpRequest.newBuilder(uri("/TL/http/down/" + id + "?from=" + from)).GET().build(),
+                HttpRequest.newBuilder(uri("/tl/http/down/" + id + "?from=" + from)).GET().build(),
                 HttpResponse.BodyHandlers.ofInputStream());
         assertEquals(200, res.statusCode());
         return res.body();
@@ -198,7 +198,7 @@ class HttpResumeProtocolTest {
 
     private int attachStatus(String id, long from) throws Exception {
         HttpResponse<InputStream> res = http.send(
-                HttpRequest.newBuilder(uri("/TL/http/down/" + id + "?from=" + from)).GET().build(),
+                HttpRequest.newBuilder(uri("/tl/http/down/" + id + "?from=" + from)).GET().build(),
                 HttpResponse.BodyHandlers.ofInputStream());
         res.body().close();
         return res.statusCode();
@@ -206,7 +206,7 @@ class HttpResumeProtocolTest {
 
     private HttpResponse<String> postBatch(String id, long batch, byte[] body) throws Exception {
         return http.send(
-                HttpRequest.newBuilder(uri("/TL/http/up/" + id + "?batch=" + batch))
+                HttpRequest.newBuilder(uri("/tl/http/up/" + id + "?batch=" + batch))
                         .timeout(Duration.ofSeconds(10))
                         .header("Content-Type", "application/octet-stream")
                         .POST(HttpRequest.BodyPublishers.ofByteArray(body)).build(),

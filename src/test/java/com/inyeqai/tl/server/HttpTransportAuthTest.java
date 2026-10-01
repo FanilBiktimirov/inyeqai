@@ -20,7 +20,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "TL.auth=TL:secret")
+        properties = "tl.auth=TL:secret")
 class HttpTransportAuthTest {
 
     @LocalServerPort
@@ -28,19 +28,19 @@ class HttpTransportAuthTest {
 
     @Test
     void connectWithoutATokenIsRefused() throws Exception {
-        assertEquals(401, post("/TL/http/connect", null).statusCode());
+        assertEquals(401, post("/tl/http/connect", null).statusCode());
     }
 
     @Test
     void connectWithTheWrongTokenIsRefused() throws Exception {
-        assertEquals(401, post("/TL/http/connect", "TL:wrong").statusCode());
+        assertEquals(401, post("/tl/http/connect", "TL:wrong").statusCode());
     }
 
     @Test
     void postingFramesIntoAnUnknownSessionWithoutATokenIsRefused() throws Exception {
         // 401, а не 404: тот, кто не прошёл аутентификацию, не должен даже узнать, существует
         // ли такой id сессии.
-        assertEquals(401, post("/TL/http/up/http-whatever?batch=1", null).statusCode());
+        assertEquals(401, post("/tl/http/up/http-whatever?batch=1", null).statusCode());
     }
 
     @Test
@@ -48,30 +48,30 @@ class HttpTransportAuthTest {
         // Гарантия про сессии, а не про эндпойнт: 401 и так говорит вызывающему, что путь есть,
         // и это нормально. Различаться не должны ответы для существующей сессии и для той,
         // которой нет, иначе их можно перебрать без аутентификации.
-        HttpResponse<String> real = post("/TL/http/connect", "TL:secret");
+        HttpResponse<String> real = post("/tl/http/connect", "TL:secret");
         String existing = real.body().trim();
-        assertEquals(401, post("/TL/http/up/" + existing + "?batch=1", null).statusCode());
-        assertEquals(401, post("/TL/http/up/http-no-such-session?batch=1", null).statusCode());
+        assertEquals(401, post("/tl/http/up/" + existing + "?batch=1", null).statusCode());
+        assertEquals(401, post("/tl/http/up/http-no-such-session?batch=1", null).statusCode());
     }
 
     @Test
     void aBatchWithoutANumberIsRefused() throws Exception {
         // Дальше токена: пачку без номера не отличить от повтора, поэтому ей отказывают,
         // а не угадывают номер.
-        assertEquals(400, post("/TL/http/up/http-whatever", "TL:secret").statusCode());
+        assertEquals(400, post("/tl/http/up/http-whatever", "TL:secret").statusCode());
     }
 
     @Test
     void readingTheDownstreamWithoutATokenIsRefused() throws Exception {
         HttpResponse<String> res = HttpClient.newHttpClient().send(
-                HttpRequest.newBuilder(uri("/TL/http/down/http-whatever")).GET().build(),
+                HttpRequest.newBuilder(uri("/tl/http/down/http-whatever")).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(401, res.statusCode());
     }
 
     @Test
     void theRightTokenOpensASession() throws Exception {
-        HttpResponse<String> res = post("/TL/http/connect", "TL:secret");
+        HttpResponse<String> res = post("/tl/http/connect", "TL:secret");
         assertEquals(200, res.statusCode());
         assertTrue(res.body().startsWith("http-"), res.body());
     }

@@ -6,8 +6,8 @@ import java.util.List;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-/** Серверные настройки, привязанные к {@code TL.*} (свойства, env или маппинг из CLI). */
-@ConfigurationProperties(prefix = "TL")
+/** Серверные настройки, привязанные к {@code tl.*} (свойства, env или маппинг из CLI). */
+@ConfigurationProperties(prefix = "tl")
 public class TLProperties {
 
     /**
@@ -17,7 +17,7 @@ public class TLProperties {
     private String auth = "";
 
     /** Путь, на который смонтирован WebSocket-эндпойнт. */
-    private String path = "/TL";
+    private String path = "/tl";
 
     /**
      * Куда клиентам можно достучаться — регулярные выражения, которые сопоставляются с
