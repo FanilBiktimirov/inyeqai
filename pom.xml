@@ -15,7 +15,7 @@
     <artifactId>inyeqai</artifactId>
     <version>0.1.0</version>
     <name>inyeqai</name>
-    <description>TCP-over-WebSocket tunnel (chisel-like client/server) on Spring Boot</description>
+    <description>TCP-over-WebSocket tunnel (client/server) on Spring Boot</description>
 
     <properties>
         <java.version>21</java.version>

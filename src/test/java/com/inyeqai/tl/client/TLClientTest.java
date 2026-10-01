@@ -32,7 +32,7 @@ class TLClientTest {
 
     @Test
     void zeroMeansKeepaliveOff() {
-        // chisel documents "0s" as the way to disable keepalive; it must parse to 0 rather
+        // "0s" is the way to disable keepalive; it must parse to 0 rather
         // than throw or round up, since a zero period would otherwise reach the scheduler.
         assertEquals(0, TLClient.parseDuration("0s"));
         assertEquals(0, TLClient.parseDuration("0"));

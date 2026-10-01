@@ -67,7 +67,7 @@ class TLKeepaliveTest {
         }
     }
 
-    /** chisel documents {@code 0s} as "no keepalive"; it must not take the client down. */
+    /** {@code 0s} means "no keepalive"; it must not take the client down. */
     @ParameterizedTest
     @EnumSource(Transport.class)
     @Timeout(60)

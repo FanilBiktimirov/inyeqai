@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * A port-forward rule parsed from the command line, in chisel's syntax.
+ * A port-forward rule parsed from the command line.
  *
  * <ul>
  *   <li>Local  {@code [bind:]port:dsthost:dstport} &mdash; the client listens, the
@@ -15,7 +15,7 @@ import java.util.List;
  *       is the server-side listener, {@code dstHost:dstPort} the client-side target.</li>
  * </ul>
  *
- * <p>Shorter forms fill in from the back, as chisel does: {@code 3000} is
+ * <p>Shorter forms fill in from the back: {@code 3000} is
  * {@code 3000:127.0.0.1:3000} and {@code example.com:3000} is
  * {@code 3000:example.com:3000}. IPv6 literals are written in brackets
  * ({@code [::1]:3000:[::1]:80}); the brackets are stripped from the stored host so it can

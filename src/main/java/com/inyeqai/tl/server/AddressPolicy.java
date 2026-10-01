@@ -6,9 +6,8 @@ import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 /**
- * Which destinations clients may reach, in the shape of chisel's {@code --authfile} address
- * lists: regular expressions matched against {@code host:port} for forward streams and
- * {@code R:bind:port} for reverse listeners.
+ * Which destinations clients may reach: regular expressions matched against
+ * {@code host:port} for forward streams and {@code R:bind:port} for reverse listeners.
  *
  * <p>An empty list allows everything, which keeps the previous behaviour; it is also the
  * reason the server is only safe on a public address with both a token and a list.
@@ -44,7 +43,7 @@ final class AddressPolicy {
         return matches(host + ":" + port);
     }
 
-    /** A reverse listener, as {@code R:bind:port}, matching chisel's notation. */
+    /** A reverse listener, as {@code R:bind:port}. */
     boolean allowsReverse(String bindHost, int port) {
         return matches("R:" + bindHost + ":" + port);
     }

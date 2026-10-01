@@ -14,7 +14,7 @@ import com.inyeqai.tl.common.ForwardSpec;
 import com.inyeqai.tl.common.Reverse;
 
 /**
- * The client entry point. Parses chisel-style arguments, then loops forever: connect,
+ * The client entry point. Parses its arguments, then loops forever: connect,
  * serve until the link drops, back off, reconnect.
  *
  * <pre>
@@ -245,7 +245,7 @@ public final class TLClient {
     static String normalizeUrl(String url) {
         String u = url;
         if (!u.startsWith("ws://") && !u.startsWith("wss://")) {
-            // accept http/https too, as chisel does, and map to the ws scheme
+            // accept http/https too and map to the ws scheme
             if (u.startsWith("https://")) {
                 u = "wss://" + u.substring("https://".length());
             } else if (u.startsWith("http://")) {
@@ -267,8 +267,8 @@ public final class TLClient {
     }
 
     /**
-     * Parse a chisel-style duration into whole seconds. {@code 0} is meaningful: as with
-     * chisel, {@code --keepalive 0s} turns keepalive off.
+     * Parse a duration such as {@code 25s} or {@code 2m} into whole seconds. {@code 0} is
+     * meaningful: {@code --keepalive 0s} turns keepalive off.
      */
     static int parseDuration(String raw) {
         String s = raw.trim().toLowerCase();

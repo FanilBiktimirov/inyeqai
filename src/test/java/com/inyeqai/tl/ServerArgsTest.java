@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 class ServerArgsTest {
 
     @Test
-    void chiselStyleFlagsBecomeSpringProperties() {
+    void cliFlagsBecomeSpringProperties() {
         InyeqaiApplication.ServerArgs a = InyeqaiApplication.translate(new String[] {
                 "--port", "8080", "--host", "0.0.0.0", "--auth", "TL:pass",
                 "--path", "/t", "--keepalive", "25s", "--pong-timeout", "75s"});

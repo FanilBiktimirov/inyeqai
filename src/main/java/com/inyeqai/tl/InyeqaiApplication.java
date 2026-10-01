@@ -77,7 +77,7 @@ public class InyeqaiApplication {
     }
 
     /**
-     * Translate our chisel-style flags into Spring's {@code --key=value} command-line
+     * Translate our flags into Spring's {@code --key=value} command-line
      * property form. Command-line args are a high-precedence property source, so they
      * override application.yml (setDefaultProperties would not).
      */
@@ -98,7 +98,7 @@ public class InyeqaiApplication {
                 // Takes no value: the fallback is on unless it is switched off, so there is
                 // nothing to say but "off".
                 case "--no-http-fallback" -> springArgs.add("--tl.http-fallback=false");
-                // Repeatable, like chisel's authfile entries; Spring binds a list by index.
+                // Repeatable; Spring binds a list by index.
                 case "--allow" -> springArgs.add("--tl.allow[" + allowCount++ + "]="
                         + value(args, ++i, "--allow"));
                 case "-v", "--verbose" -> springArgs.add(VERBOSE);
@@ -142,7 +142,7 @@ public class InyeqaiApplication {
 
     private static void usage() {
         System.out.println("""
-                TCP-over-WebSocket tunnel (chisel-like)
+                TCP-over-WebSocket tunnel
 
                 Usage:
                   java -jar inyeqai.jar server [--port 8080] [--host 0.0.0.0] [--auth user:pass]
@@ -181,7 +181,7 @@ public class InyeqaiApplication {
                 Any --key=value is passed to Spring as-is, so application.yml settings work on
                 the command line too (--logging.level.com.inyeqai.tl=TRACE, --server.ssl.*).
 
-                Example (mirrors the compose.cloud.yaml chisel client):
+                Example (mirrors the compose.cloud.yaml client):
                   java -jar inyeqai.jar client --auth TL:PASS --keepalive 25s \\
                       wss://alfa.example/ 0.0.0.0:3128:127.0.0.1:3129 R:3130:host.docker.internal:3129
                 """);
