@@ -21,7 +21,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
         this.handler = handler;
     }
 
-    /** The {@code --auth} token, shared by the handshake and {@code GET /status}. */
+    /** Токен {@code --auth}, общий для рукопожатия и {@code GET /status}. */
     @Bean
     SharedSecret sharedSecret() {
         return new SharedSecret(props.getAuth());
@@ -34,15 +34,16 @@ public class WebSocketConfig implements WebSocketConfigurer {
                 .setAllowedOriginPatterns("*");
     }
 
-    /** Raise the container message-size limits above our 16 KB payload chunks. */
+    /** Поднять лимиты контейнера на размер сообщения выше наших кусков данных по 16 КБ. */
     @Bean
     public ServletServerContainerFactoryBean createWebSocketContainer() {
         ServletServerContainerFactoryBean c = new ServletServerContainerFactoryBean();
         c.setMaxBinaryMessageBufferSize(256 * 1024);
         c.setMaxTextMessageBufferSize(64 * 1024);
-        // No container idle cap: liveness is decided by the handler's own ping/pong reaper,
-        // which also releases the reverse listeners a dead session was holding. Leaving it
-        // to the container would cut idle-but-healthy tunnels instead.
+        // Никакого ограничения на простой со стороны контейнера: живость решает собственный
+        // ping/pong-отстрел в хендлере, который ещё и освобождает обратные слушатели, занятые
+        // мёртвой сессией. Оставь это контейнеру — и он вместо того резал бы простаивающие,
+        // но здоровые туннели.
         c.setMaxSessionIdleTimeout(0L);
         return c;
     }

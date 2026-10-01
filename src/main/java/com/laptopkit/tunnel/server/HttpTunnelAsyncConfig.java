@@ -8,27 +8,30 @@ import org.springframework.web.servlet.config.annotation.AsyncSupportConfigurer;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
- * What the downstream response of the HTTP fallback needs from Spring MVC, and nothing else.
+ * Всё, что ответу потока вниз в запасном HTTP-транспорте нужно от Spring MVC, и ничего сверх
+ * этого.
  *
- * <p>Two defaults would otherwise break it:
+ * <p>Иначе его сломали бы два дефолта:
  *
  * <ul>
- *   <li><b>The async timeout.</b> Tomcat gives an async request 30 seconds. For a tunnel that
- *       is not a timeout but a hard limit on how long it may stay up, so a healthy idle
- *       carrier would be cut every half minute. Zero or less means no deadline, which is the
- *       honest setting here: liveness is decided by the keepalive exchange, which notices a
- *       dead peer rather than guessing from elapsed time. This mirrors
- *       {@code setMaxSessionIdleTimeout(0)} on the WebSocket container.
- *   <li><b>The executor.</b> Boot's default task executor keeps a handful of core threads and
- *       an unbounded queue, so beyond those few threads work would queue instead of running
- *       &mdash; and a queued downstream response is a session that never starts. The pool
- *       below hands every carrier a thread of its own instead, with no queue.
+ *   <li><b>Async-таймаут.</b> Tomcat даёт асинхронному запросу 30 секунд. Для туннеля это не
+ *       таймаут, а жёсткий предел на то, сколько ему позволено жить: здоровый простаивающий
+ *       транспорт рубили бы каждые полминуты. Ноль или меньше означает «без срока» — и это
+ *       здесь честная настройка: живость решает обмен keepalive, который замечает мёртвого
+ *       соседа, а не гадает по прошедшему времени. То же самое, что
+ *       {@code setMaxSessionIdleTimeout(0)} у WebSocket-контейнера.
+ *   <li><b>Исполнитель.</b> У дефолтного task executor'а в Boot'е горстка core-потоков и
+ *       неограниченная очередь, так что дальше этой горстки работа встала бы в очередь вместо
+ *       того, чтобы выполняться, — а ответ потока вниз, попавший в очередь, это сессия, которая
+ *       так и не началась. Пул ниже вместо этого выдаёт каждому транспорту собственный поток и
+ *       очереди не имеет.
  * </ul>
  *
- * <p>Each connected HTTP-transport session holds one of these threads for as long as it is
- * connected, so {@code maxPoolSize} is also the limit on concurrent sessions over this
- * transport. That is a deliberate trade: a few hundred threads cost little, and writing
- * frames with ordinary blocking I/O keeps the carrier simple enough to reason about.
+ * <p>Каждая подключённая сессия HTTP-транспорта держит один такой поток всё время, пока
+ * подключена, поэтому {@code maxPoolSize} — это ещё и предел на число одновременных сессий на
+ * этом транспорте. Это осознанный компромисс: пара сотен потоков стоит дёшево, а запись кадров
+ * обычным блокирующим I/O оставляет транспорт достаточно простым, чтобы о нём можно было
+ * рассуждать.
  */
 @Configuration
 @ConditionalOnProperty(name = "tunnel.http-fallback", matchIfMissing = true)
@@ -46,8 +49,8 @@ class HttpTunnelAsyncConfig implements WebMvcConfigurer {
         pool.setThreadNamePrefix("tunnel-down-");
         pool.setCorePoolSize(2);
         pool.setMaxPoolSize(200);
-        // No queue: a queued carrier is a session that silently never starts, so the pool
-        // must grow to meet demand and refuse loudly once it cannot.
+        // Без очереди: транспорт, попавший в очередь, это сессия, которая молча так и не
+        // началась, поэтому пул должен расти под спрос и громко отказывать, когда уже не может.
         pool.setQueueCapacity(0);
         pool.setKeepAliveSeconds(60);
         pool.setAllowCoreThreadTimeOut(true);

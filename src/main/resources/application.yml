@@ -1,3 +1,8 @@
+# ВАЖНО для этой ветки: значения отсюда перебиваются полями из TunnelConfig. Их кладут в
+# начало окружения Spring при запуске, поэтому правка этого файла на запуск не повлияет —
+# менять надо TunnelConfig. Файл остаётся нижним слоем: он задаёт значения по умолчанию для
+# всего, чего в TunnelConfig нет, и для запуска собранного jar чем-то кроме TunnelApplication.
+
 server:
   port: 8080
 
@@ -6,26 +11,27 @@ spring:
     banner-mode: "off"
 
 tunnel:
-  # Shared secret the client sends as X-Tunnel-Auth. Empty = open (dev only).
-  # Override with --auth on the command line or TUNNEL_AUTH in the environment.
+  # Общий секрет, который клиент шлёт в заголовке X-Tunnel-Auth. Пусто = вход открыт
+  # (только для разработки). Перебивается полем AUTH или переменной TUNNEL_AUTH.
   auth: ""
-  # Path the WebSocket endpoint is mounted at; the client appends it if the URL has none.
+  # Путь, на котором висит WebSocket-эндпойнт; если в URL пути нет, клиент добавит его сам.
   path: /tunnel
-  # Destinations clients may reach: regexes over "host:port" for forward streams and
-  # "R:bind:port" for reverse listeners. Empty = anything the server can reach.
-  # Example for the proxy chain (one way in, one way back):
+  # Куда клиентам можно дозваниваться: регулярки по "host:port" для прямых потоков и по
+  # "R:bind:port" для обратных слушателей. Пусто = куда угодно, докуда достаёт сервер.
+  # Пример для цепочки через прокси (один путь внутрь, один обратно):
   #   allow:
   #     - "^127\\.0\\.0\\.1:3129$"
   #     - "^R:0\\.0\\.0\\.0:3130$"
   allow: []
-  # Serve the tunnel over plain HTTP as well, at {path}/http, for clients on networks where
-  # the WebSocket upgrade does not survive. Set to false to leave only the WebSocket
-  # endpoint (--no-http-fallback on the command line).
+  # Отдавать туннель ещё и по обычному HTTP, на {path}/http, — для клиентов в сетях, где
+  # переход на WebSocket не переживает дороги. false оставит только WebSocket-эндпойнт
+  # (поле HTTP_FALLBACK в TunnelConfig).
   http-fallback: true
-  # How often to ping each client. Zero disables server-side keepalive and reaping.
+  # Как часто пинговать каждого клиента. Ноль выключает серверный keepalive вместе
+  # с отстрелом замолчавших сессий.
   keepalive: 25s
-  # Silence after which a client counts as gone: its session is closed and its reverse
-  # listeners freed, so the same client can rebind them when it reconnects.
+  # Молчание, после которого клиент считается пропавшим: его сессия закрывается, а обратные
+  # слушатели освобождаются, чтобы тот же клиент смог занять их снова при переподключении.
   pong-timeout: 75s
 
 logging:

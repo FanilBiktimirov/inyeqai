@@ -15,9 +15,9 @@ import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 
 /**
- * The length prefix is the only thing keeping frames apart on the HTTP transport, so the
- * interesting cases are the ones where a reader could guess wrong: a stream that ends between
- * frames, which is normal, and one that ends inside a frame, which is corruption.
+ * На HTTP-транспорте кадры отделяет друг от друга только префикс длины, поэтому интересны те
+ * случаи, где читающая сторона может угадать неверно: поток, который кончился между кадрами —
+ * это нормально, и поток, который кончился внутри кадра — это порча данных.
  */
 class FramingTest {
 
@@ -47,17 +47,17 @@ class FramingTest {
         out.write(0);
         out.write(0);
         out.write(0);
-        out.write(8); // promises eight bytes
-        out.write(new byte[]{1, 2, 3}, 0, 3); // delivers three
+        out.write(8); // обещает восемь байт
+        out.write(new byte[]{1, 2, 3}, 0, 3); // отдаёт три
         DataInputStream in = Framing.reader(new ByteArrayInputStream(out.toByteArray()));
-        // Not an end of stream: treating it as one would hand the mux half a frame and
-        // silently corrupt whatever stream it belonged to.
+        // Это не конец потока: принять его за конец — значит отдать в мультиплексор половину
+        // кадра и молча испортить тот поток, которому кадр принадлежал.
         assertThrows(IOException.class, () -> Framing.read(in));
     }
 
     @Test
     void anAbsurdLengthIsRefusedBeforeAnythingIsAllocated() {
-        byte[] claim = {0x7f, (byte) 0xff, (byte) 0xff, (byte) 0xff}; // ~2 GB
+        byte[] claim = {0x7f, (byte) 0xff, (byte) 0xff, (byte) 0xff}; // ~2 ГБ
         DataInputStream in = Framing.reader(new ByteArrayInputStream(claim));
         IOException e = assertThrows(IOException.class, () -> Framing.read(in));
         assertTrue(e.getMessage().contains("bad frame length"), e.getMessage());
@@ -98,8 +98,8 @@ class FramingTest {
         } catch (IOException e) {
             throw new AssertionError(e);
         }
-        // Everything but the last payload byte: this is what a severed response looks like, and
-        // mistaking it for the end would leave the reader believing it holds a frame it does not.
+        // Всё, кроме последнего байта полезной нагрузки: именно так выглядит обрубленный ответ,
+        // и если принять его за конец, читающая сторона поверит, что держит кадр, которого нет.
         byte[] truncated = new byte[out.size() - 1];
         System.arraycopy(out.toByteArray(), 0, truncated, 0, truncated.length);
         DataInputStream in = Framing.reader(new ByteArrayInputStream(truncated));
@@ -108,16 +108,16 @@ class FramingTest {
 
     @Test
     void aHeaderCutInHalfIsAnErrorToo() {
-        // Four bytes: enough to start a sequence number, not enough to finish one. Returning
-        // "ended" here would silently drop whatever frame was on its way.
+        // Четыре байта: хватает начать номер кадра, не хватает его дочитать. Вернуть здесь
+        // «поток кончился» — значит молча потерять кадр, который был уже в пути.
         DataInputStream in = Framing.reader(new ByteArrayInputStream(new byte[]{0, 0, 0, 0}));
         assertThrows(IOException.class, () -> Framing.readSequenced(in));
     }
 
     @Test
     void sequenceNumbersStartAtOne() {
-        // Zero means "I have nothing" when a client asks to resume, so it can never be a real
-        // frame number; a stream claiming it is out of step.
+        // Ноль означает «у меня ничего нет», когда клиент просит продолжить сессию, поэтому
+        // настоящим номером кадра он быть не может; поток, который его присылает, сбился.
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         try {
             Framing.write(out, 0L, Frames.ping());

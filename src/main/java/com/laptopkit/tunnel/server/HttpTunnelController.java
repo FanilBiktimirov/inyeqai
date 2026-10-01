@@ -34,46 +34,46 @@ import com.laptopkit.tunnel.common.Frames;
 import com.laptopkit.tunnel.common.Framing;
 
 /**
- * The fallback transport: the same tunnel over plain HTTP, for networks where the WebSocket
- * upgrade never arrives. Proxies that strip {@code Upgrade}, TLS inspection that mangles the
- * handshake and gateways that simply answer 400 all leave the WebSocket carrier unusable
- * while ordinary requests keep working.
+ * Резервный транспорт: тот же туннель по обычному HTTP — для сетей, где WebSocket-апгрейд так
+ * и не доезжает. Прокси, которые срезают {@code Upgrade}, TLS-инспекция, которая калечит
+ * рукопожатие, и шлюзы, которые просто отвечают 400, — всё это делает WebSocket-транспорт
+ * непригодным, пока обычные запросы продолжают работать.
  *
  * <pre>
- *   POST {path}/http/connect            open a session, returns its id
- *   GET  {path}/http/down/{id}?from=N   a long-lived response carrying frames server -&gt; client,
- *                                       continuing after frame N (0 = from the beginning)
- *   POST {path}/http/up/{id}?batch=N    batch N of frames, client -&gt; server; repeated
+ *   POST {path}/http/connect            открыть сессию, возвращает её id
+ *   GET  {path}/http/down/{id}?from=N   долгоживущий ответ с кадрами сервер -&gt; клиент,
+ *                                       продолжая после кадра N (0 = с самого начала)
+ *   POST {path}/http/up/{id}?batch=N    пачка кадров N, клиент -&gt; сервер; повторяется
  * </pre>
  *
- * <p>The shape is asymmetric on purpose. Downstream is one streaming response, because the
- * server must be able to push at any moment. Upstream is a series of short POSTs rather than
- * one long request body: an intermediary that buffers a request body before forwarding it
- * would deadlock a streaming upload, and a body-size cap on the way in &mdash; the chain this
- * tunnel was written for has squid's {@code REQUEST_BODY_MAX} at 500 KB &mdash; would kill it
- * outright. Short bounded POSTs survive both.
+ * <p>Схема нарочно несимметричная. Вниз — один потоковый ответ, потому что сервер должен уметь
+ * пушить в любой момент. Вверх — череда коротких POST'ов, а не одно длинное тело запроса:
+ * посредник, который буферизует тело запроса, прежде чем переслать его дальше, устроил бы
+ * потоковой загрузке дедлок, а ограничение на размер тела на входе — в той цепочке, под которую
+ * этот туннель и писался, у squid'а стоит {@code REQUEST_BODY_MAX} в 500 КБ — убило бы её
+ * начисто. Короткие POST'ы с известным размером выживают и там, и там.
  *
- * <p>Sessions outlive individual requests, so none of this is tied to a request thread;
- * every session detail is handled by {@link TunnelWebSocketHandler} through
- * {@link HttpCarrierSession}, which explains the arrangement.
+ * <p>Сессии живут дольше отдельных запросов, поэтому ничего здесь не привязано к потоку
+ * запроса; всё, что касается самой сессии, делает {@link TunnelWebSocketHandler} через
+ * {@link HttpCarrierSession} — там же объяснено, зачем так устроено.
  *
- * <p>Both directions can be resumed, and they have to be resumed differently, because a broken
- * response and a broken request leave different questions open:
+ * <p>Восстановить можно оба направления, и восстанавливать их приходится по-разному, потому что
+ * оборвавшийся ответ и оборвавшийся запрос оставляют открытыми разные вопросы:
  *
  * <ul>
- *   <li><b>Downstream</b> ends without saying how much of it arrived. So frames are numbered and
- *       kept until acknowledged, and {@code from=N} asks for everything after the last one the
- *       client holds. See {@link HttpCarrierSession#pumpTo}.
- *   <li><b>Upstream</b> fails without saying whether the server applied it. So each POST carries
- *       a batch number: the same number again is a retry to answer but not apply, and a number
- *       that skips one means frames are missing and the session cannot continue. Retrying
- *       without this would duplicate bytes inside a stream, which is corruption neither end can
- *       detect.
+ *   <li><b>Поток вниз</b> кончается, не сказав, сколько из него доехало. Поэтому кадры
+ *       нумеруются и хранятся до подтверждения, а {@code from=N} просит всё после последнего,
+ *       который у клиента есть. См. {@link HttpCarrierSession#pumpTo}.
+ *   <li><b>Поток вверх</b> срывается, не сказав, применил ли сервер пачку. Поэтому каждый POST
+ *       несёт номер пачки: тот же номер снова — это повтор, на который надо ответить, но не
+ *       применять, а номер с пропуском значит, что кадров не хватает и сессии не продолжиться.
+ *       Повтор без этого продублировал бы байты внутри потока, а это порча данных, которую не
+ *       заметит ни одна из сторон.
  * </ul>
  *
- * <p>The status codes are what the client steers by: 409 means wait and ask again, because
- * another response is still being wound up, while 404 and 410 mean the session is beyond saving
- * and the tunnel has to be built anew.
+ * <p>Клиент рулит по кодам ответа: 409 значит «подожди и спроси ещё раз», потому что другой
+ * ответ ещё сворачивается, а 404 и 410 значат, что сессию уже не спасти и туннель надо
+ * поднимать заново.
  */
 @RestController
 @ConditionalOnProperty(name = "tunnel.http-fallback", matchIfMissing = true)
@@ -83,8 +83,8 @@ class HttpTunnelController {
     private static final Logger log = LoggerFactory.getLogger(HttpTunnelController.class);
 
     /**
-     * Cap on one upstream POST. The client batches well below this; a body bigger than this
-     * means a confused or hostile sender, not real traffic.
+     * Предел на один POST потока вверх. Клиент пакует пачки намного меньше; тело больше этого
+     * значит запутавшегося или враждебного отправителя, а не настоящий трафик.
      */
     private static final int MAX_UP_BYTES = 8 * 1024 * 1024;
 
@@ -105,7 +105,7 @@ class HttpTunnelController {
         if (!secret.accepts(token)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("unauthorized\n");
         }
-        // Prefixed so /status and the logs say which carrier a session came in on.
+        // Префикс — чтобы /status и логи говорили, каким транспортом пришла сессия.
         String id = "http-" + UUID.randomUUID();
         HttpCarrierSession carrier = new HttpCarrierSession(
                 id, URI.create(request.getRequestURL().toString()),
@@ -114,9 +114,9 @@ class HttpTunnelController {
                 this::release);
         carriers.put(id, carrier);
         handler.afterConnectionEstablished(carrier);
-        // A session whose client never opens the downstream is reaped by the handler's own
-        // keepalive pass: without a downstream no pong can arrive, so it goes stale like any
-        // other silent client.
+        // Сессию, клиент которой так и не открыл поток вниз, отстреливает keepalive-проход
+        // самого обработчика: без потока вниз pong прийти не может, так что она протухает, как
+        // любой другой замолчавший клиент.
         return ResponseEntity.ok().contentType(MediaType.TEXT_PLAIN).body(id + "\n");
     }
 
@@ -135,8 +135,8 @@ class HttpTunnelController {
         if (from < 0) {
             return ResponseEntity.badRequest().build();
         }
-        // Checked before the response is committed, so an impossible request gets a status the
-        // client can act on instead of a stream that dies on its first frame.
+        // Проверяем до того, как ответ закоммичен, чтобы на невозможный запрос клиент получил
+        // код, с которым можно что-то сделать, а не поток, умирающий на первом кадре.
         if (!carrier.canResumeFrom(from)) {
             log.warn("cannot resume {} from frame {}, ending the session", id, from);
             carrier.close(CloseStatus.SERVER_ERROR);
@@ -150,8 +150,8 @@ class HttpTunnelController {
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .header("Cache-Control", "no-store")
-                // Asks nginx not to buffer this response. Buffering would hold frames back
-                // until some buffer filled, which for a tunnel means a stall, not a delay.
+                // Просим nginx не буферизовать этот ответ. Буферизация держала бы кадры, пока
+                // какой-нибудь буфер не наполнится, а для туннеля это не задержка, а затык.
                 .header("X-Accel-Buffering", "no")
                 .body(body);
     }
@@ -159,9 +159,9 @@ class HttpTunnelController {
     @PostMapping("/up/{id}")
     ResponseEntity<String> up(
             @PathVariable String id,
-            // Taken as optional and checked below, so that a request missing it is still
-            // refused for the right reason: nothing gets past the token check, and a caller
-            // without one learns nothing about what it got wrong.
+            // Берём как необязательный и проверяем ниже, чтобы запросу без него отказали по
+            // правильной причине: дальше проверки токена не проходит ничто, и вызывающий без
+            // токена не узнаёт, в чём именно он ошибся.
             @RequestParam(name = "batch", defaultValue = "-1") long batch,
             @RequestHeader(name = "X-Tunnel-Auth", required = false) String token,
             InputStream body) throws IOException {
@@ -173,23 +173,23 @@ class HttpTunnelController {
         }
         HttpCarrierSession carrier = carriers.get(id);
         if (carrier == null) {
-            // The client must not keep posting into a session that no longer exists; 404
-            // tells it to drop this carrier and reconnect.
+            // Клиент не должен продолжать постить в сессию, которой больше нет; 404 говорит
+            // ему выбросить этот транспорт и переподключиться.
             return ResponseEntity.notFound().build();
         }
         ReentrantLock lock = carrier.inboundLock();
         lock.lock();
         try {
             if (!carrier.beginBatch(batch)) {
-                // A retry of a batch already applied. Answering without applying it again is the
-                // whole point: the client had no way to tell that our last answer was lost, and
-                // the same frames twice would duplicate bytes inside a stream.
+                // Повтор уже применённой пачки. Ответить, не применяя её заново, — в этом весь
+                // смысл: клиент никак не мог узнать, что наш прошлый ответ потерялся, а те же
+                // кадры дважды продублировали бы байты внутри потока.
                 log.debug("upstream batch {} on {} was already applied", batch, id);
                 return ResponseEntity.noContent().build();
             }
             deliver(carrier, body);
-            // Marked only now: a batch that failed half-way through cannot be retried, so the
-            // session is ended below instead and the client builds a new one.
+            // Отмечаем только сейчас: пачку, сорвавшуюся на середине, повторить нельзя, поэтому
+            // ниже сессию просто заканчиваем, а клиент поднимает новую.
             carrier.batchApplied(batch);
         } catch (HttpCarrierSession.CannotResume e) {
             log.warn("ending {}: {}", id, e.getMessage());
@@ -206,8 +206,8 @@ class HttpTunnelController {
     }
 
     /**
-     * Hand one POST's worth of frames to the session, in the order they were sent. Order is
-     * the whole point of the lock around this call: these frames carry byte streams.
+     * Отдать сессии кадры из одного POST'а в том порядке, в каком их отправили. Порядок — и
+     * есть весь смысл замка вокруг этого вызова: эти кадры несут байтовые потоки.
      */
     private void deliver(HttpCarrierSession carrier, InputStream body) throws IOException {
         DataInputStream in = Framing.reader(body);
@@ -222,17 +222,17 @@ class HttpTunnelController {
                 throw new IOException("empty frame");
             }
             if (!handleCarrierFrame(carrier, frame)) {
-                // Everything else is tunnel traffic and goes to the handler untouched, as
-                // if the container had delivered a WebSocket message.
+                // Всё остальное — трафик туннеля, он уходит обработчику нетронутым, как будто
+                // WebSocket-сообщение доставил контейнер.
                 dispatch(carrier, new BinaryMessage(frame));
             }
         }
     }
 
     /**
-     * Hand one message to the session handler. Its callback may throw anything, and anything
-     * it throws leaves this session half-way through a byte stream: there is no sensible way
-     * to carry on, so the batch fails and the session goes with it.
+     * Отдать одно сообщение обработчику сессии. Его колбэк может бросить что угодно, и что
+     * угодно брошенное оставляет эту сессию на середине байтового потока: продолжать разумным
+     * образом уже нельзя, поэтому пачка срывается, а вместе с ней уходит и сессия.
      */
     private void dispatch(HttpCarrierSession carrier, WebSocketMessage<?> message) throws IOException {
         try {
@@ -243,19 +243,20 @@ class HttpTunnelController {
     }
 
     /**
-     * Deal with the carrier's own frames here, so neither the handler nor the mux ever sees
-     * one.
+     * Разобраться с собственными кадрами транспорта здесь, чтобы ни обработчик, ни
+     * мультиплексор ни одного такого кадра не увидели.
      *
-     * @return true when the frame was the carrier's business
+     * @return true, если кадр был делом транспорта
      */
     private boolean handleCarrierFrame(HttpCarrierSession carrier, byte[] frame) throws IOException {
         switch (frame[0]) {
             case Frames.PING -> carrier.enqueue(Frames.pong());
-            // Lets the server drop what it was holding in case this client had to come back for
-            // it; see HttpCarrierSession for why "written" is not "delivered" here.
+            // Позволяет серверу выбросить то, что он держал на случай, если этому клиенту
+            // пришлось бы за этим вернуться; почему «записано» здесь не значит «доставлено» —
+            // см. HttpCarrierSession.
             case Frames.ACK -> carrier.onAck(Frames.decode(frame).ackThrough);
-            // Reported as a pong so the handler's liveness tracking, and the "last pong"
-            // line on /status, mean the same thing on both transports.
+            // Докладываем как pong, чтобы слежение обработчика за живостью и строчка
+            // «last pong» на /status значили на обоих транспортах одно и то же.
             case Frames.PONG -> dispatch(carrier, new PongMessage());
             case Frames.BYE -> {
                 log.debug("client said goodbye on {}", carrier.getId());
@@ -269,14 +270,14 @@ class HttpTunnelController {
     }
 
     /**
-     * Called exactly once per session, from {@link HttpCarrierSession#close}, whichever side
-     * ended it: the client's {@code BYE}, the downstream response breaking, or the handler's
-     * own reaper closing a session that stopped answering.
+     * Вызывается ровно один раз на сессию, из {@link HttpCarrierSession#close}, чем бы её ни
+     * закончили: {@code BYE} от клиента, обрывом ответа потока вниз или отстрелом замолчавших
+     * сессий в самом обработчике, который закрывает переставшую отвечать сессию.
      */
     private void release(HttpCarrierSession carrier, CloseStatus status) {
         carriers.remove(carrier.getId(), carrier);
-        // Closes the mux and frees the reverse listeners, the same callback the container
-        // would make for a WebSocket.
+        // Закрывает мультиплексор и освобождает обратные слушатели — тот же колбэк, что
+        // контейнер сделал бы для WebSocket'а.
         handler.afterConnectionClosed(carrier, status);
     }
 }

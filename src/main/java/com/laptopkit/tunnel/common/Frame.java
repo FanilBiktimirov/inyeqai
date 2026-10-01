@@ -3,8 +3,8 @@ package com.laptopkit.tunnel.common;
 import java.util.List;
 
 /**
- * A decoded protocol frame. One WebSocket binary message carries exactly one frame.
- * Fields not relevant to a given {@link #type} are left null / zero.
+ * Разобранный кадр протокола. Одно бинарное сообщение WebSocket несёт ровно один кадр.
+ * Поля, которые к конкретному {@link #type} не относятся, остаются null / нулём.
  */
 public final class Frame {
 
@@ -14,9 +14,9 @@ public final class Frame {
     public final int port;
     public final byte[] payload;
     public final List<Reverse> reverses;
-    /** Bytes the peer drained, for {@link Frames#WINDOW}. */
+    /** Сколько байт другая сторона успела выгрести, для {@link Frames#WINDOW}. */
     public final int credit;
-    /** Highest downstream sequence the peer has received, for {@link Frames#ACK}. */
+    /** Наибольший номер кадра вниз, который другая сторона получила, для {@link Frames#ACK}. */
     public final long ackThrough;
 
     private Frame(byte type, int streamId, String host, int port, byte[] payload,
@@ -55,12 +55,16 @@ public final class Frame {
         return new Frame(Frames.CONFIG, 0, null, 0, null, reverses, 0, 0);
     }
 
-    /** A carrier-level frame ({@code PING}, {@code PONG}, {@code BYE}): type and nothing else. */
+    /**
+     * Кадр уровня транспорта без полей: {@code PING}, {@code PONG} или {@code BYE}. У
+     * {@code ACK}, который тоже относится к транспорту, поле есть — он собирается в
+     * {@link #ack(long)}.
+     */
     static Frame carrier(byte type) {
         return new Frame(type, 0, null, 0, null, null, 0, 0);
     }
 
-    /** The peer confirming it holds every downstream frame up to {@code through}. */
+    /** Другая сторона подтверждает, что держит у себя все кадры вниз до {@code through}. */
     static Frame ack(long through) {
         return new Frame(Frames.ACK, 0, null, 0, null, null, 0, through);
     }

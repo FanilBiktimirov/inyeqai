@@ -35,73 +35,77 @@ import com.laptopkit.tunnel.common.Frames;
 import com.laptopkit.tunnel.common.Framing;
 
 /**
- * An HTTP carrier dressed as a {@link WebSocketSession}.
+ * HTTP-транспорт, переодетый в {@link WebSocketSession}.
  *
- * <p>This is the whole trick behind the fallback transport. Everything that makes a tunnel
- * session a session &mdash; the mux, the reverse listeners, the allow list, the keepalive
- * reaper that frees ports held by a vanished client, the {@code /status} view &mdash; lives in
- * {@link TunnelWebSocketHandler} and is about sessions, not about WebSockets. Rather than
- * grow a second copy of it for HTTP, the HTTP transport presents itself to that handler as
- * an ordinary session: {@link HttpTunnelController} calls the same
- * {@code afterConnectionEstablished} / {@code handleMessage} / {@code afterConnectionClosed}
- * callbacks the container would. The handler is untouched and cannot drift out of step with
- * a second implementation, because there is no second implementation.
+ * <p>В этом весь трюк запасного транспорта. Всё, что делает сессию туннеля сессией —
+ * мультиплексор, обратные слушатели, список разрешённых адресов, keepalive-отстрел замолчавших
+ * сессий, который освобождает порты, занятые исчезнувшим клиентом, страница {@code /status} —
+ * живёт в {@link TunnelWebSocketHandler} и относится к сессиям, а не к WebSocket'ам. Вместо
+ * того чтобы отращивать для HTTP вторую копию всего этого, HTTP-транспорт притворяется перед
+ * этим обработчиком обычной сессией: {@link HttpTunnelController} вызывает те же колбэки
+ * {@code afterConnectionEstablished} / {@code handleMessage} / {@code afterConnectionClosed},
+ * что вызвал бы контейнер. Обработчик не тронут и не может разойтись со второй реализацией,
+ * потому что второй реализации нет.
  *
- * <p>What the two carriers differ in is framing, liveness and lifetime, and those differences
- * stop here:
+ * <p>Различаются два транспорта кадрированием, тем, как решается живость, и временем жизни — и
+ * эти различия заканчиваются здесь:
  * <ul>
- *   <li>Outgoing frames are queued and written to whichever downstream response is attached,
- *       each one length-prefixed ({@link Framing}) because an HTTP body has no message
- *       boundaries.
- *   <li>A {@link PingMessage} from the handler's reaper becomes a {@code PING} frame, and
- *       the {@code PONG} frame that answers it is reported back to the handler as a
- *       {@code PongMessage}. The handler's one measure of a live session &mdash; the age of
- *       the last pong &mdash; therefore means exactly the same thing on both transports.
- *   <li>A session <b>survives its downstream response</b>. The response is a thing proxies cut
- *       for reasons of their own; the session is not. See {@link #pumpTo}.
+ *   <li>Исходящие кадры складываются в очередь и пишутся в тот ответ потока вниз, который
+ *       сейчас подключён, каждый с префиксом длины ({@link Framing}), потому что у HTTP-тела
+ *       нет границ сообщений.
+ *   <li>{@link PingMessage} от отстрела замолчавших сессий в обработчике превращается в кадр
+ *       {@code PING}, а кадр {@code PONG}, который на него отвечает, докладывается обработчику
+ *       обратно как {@code PongMessage}. Поэтому единственная мера живости сессии, которая есть
+ *       у обработчика — давность последнего pong — значит на обоих транспортах ровно одно и то
+ *       же.
+ *   <li>Сессия <b>переживает свой ответ потока вниз</b>. Ответ прокси рубят по своим
+ *       соображениям; сессию — нет. См. {@link #pumpTo}.
  * </ul>
  *
- * <h2>Resumption</h2>
+ * <h2>Восстановление сессии</h2>
  *
- * <p>Every downstream frame gets a sequence number and is kept until the client confirms it
- * with an {@code ACK}. When a response dies, the client comes back asking to continue after
- * the last sequence it holds, and everything after that is written again on the new response.
+ * <p>Каждый кадр, идущий вниз, получает номер и хранится, пока клиент не подтвердит его через
+ * {@code ACK}. Когда ответ умирает, клиент возвращается и просит продолжить после последнего
+ * номера, который у него есть, и всё, что идёт после, пишется заново в новый ответ.
  *
- * <p>The buffer is what makes this safe rather than merely plausible. A frame might have been
- * written into a response that was already dead, and nothing about the write says so, so
- * "sent" cannot mean "delivered": only an {@code ACK} can. Without the buffer a resumed
- * session would quietly skip those frames, which for a byte stream is corruption that neither
- * end can detect. It is bounded ({@link #RESUME_BUFFER_BYTES}) and, when full, the writer
- * waits rather than growing: no client gets to make the server hold data for it without limit.
+ * <p>Безопасным, а не просто правдоподобным, это делает буфер. Кадр мог быть записан в ответ,
+ * который уже был мёртв, и по самой записи этого никак не видно, так что «отправлен» не может
+ * значить «доставлен»: значить это может только {@code ACK}. Без буфера восстановленная сессия
+ * тихо пропустила бы эти кадры, а для байтового потока это порча данных, которую не заметит ни
+ * одна из сторон. Буфер ограничен ({@link #RESUME_BUFFER_BYTES}), и когда он полон, писатель
+ * ждёт, а не растёт: ни одному клиенту не позволено заставить сервер держать для него данные
+ * без предела.
  */
 final class HttpCarrierSession implements WebSocketSession {
 
     private static final Logger log = LoggerFactory.getLogger(HttpCarrierSession.class);
 
     /**
-     * Frames that may wait for a downstream writer. The mux's own per-stream windows bound each
-     * stream; this bounds the total, so a client that has stopped reading cannot make the server
-     * buffer without limit. It is also the budget a session has to survive a break on: whatever
-     * piles up here while no response is attached.
+     * Сколько кадров может ждать писателя потока вниз. Собственные окна мультиплексора на
+     * каждый поток ограничивают поток по отдельности; это ограничивает общую сумму, так что
+     * клиент, который перестал читать, не может заставить сервер буферизовать без предела. Это
+     * же — бюджет, на котором сессия переживает обрыв: всё, что накопится здесь, пока ни один
+     * ответ не подключён.
      */
     private static final int QUEUE_FRAMES = 256;
-    /** How long a sender waits for queue space before the session is written off. */
+    /** Сколько отправитель ждёт места в очереди, прежде чем сессию спишут в утиль. */
     private static final long OFFER_TIMEOUT_MS = 30_000;
     /**
-     * Bytes written but not yet acknowledged that one session may hold for a retransmit. Beyond
-     * this the writer waits for acknowledgements. A client that is reading at all acknowledges
-     * within a round trip, so in ordinary use this is never reached; it is reached when a
-     * client reads nothing, which is exactly when the server should stop producing for it.
+     * Сколько записанных, но ещё не подтверждённых байт одна сессия может держать для
+     * переотправки. Дальше этого писатель ждёт подтверждений. Клиент, который вообще читает,
+     * подтверждает за один круг, так что при обычной работе до предела дело не доходит;
+     * доходит, когда клиент не читает ничего, — а это ровно тот случай, когда сервер и должен
+     * перестать для него что-то производить.
      */
     private static final int RESUME_BUFFER_BYTES = 2 * 1024 * 1024;
     /**
-     * How long the writer waits for an acknowledgement before giving up on the session. A peer
-     * taking frames and never confirming them is broken in a way waiting cannot fix.
+     * Сколько писатель ждёт подтверждения, прежде чем поставить на сессии крест. Сосед, который
+     * забирает кадры и никогда их не подтверждает, сломан так, что ожиданием это не лечится.
      */
     private static final long ACK_TIMEOUT_MS = 60_000;
-    /** How long a new downstream waits for the previous one to let go before answering 409. */
+    /** Сколько новый поток вниз ждёт, пока предыдущий отпустит слот, прежде чем ответить 409. */
     private static final long ATTACH_WAIT_MS = 5_000;
-    /** Queue sentinel that ends the downstream writer loop. */
+    /** Маркер в очереди, который завершает цикл писателя потока вниз. */
     private static final byte[] POISON = new byte[0];
 
     private final String id;
@@ -113,12 +117,12 @@ final class HttpCarrierSession implements WebSocketSession {
     private final BlockingQueue<byte[]> outbound = new ArrayBlockingQueue<>(QUEUE_FRAMES);
     private final Map<String, Object> attributes = new ConcurrentHashMap<>();
     private final AtomicBoolean closed = new AtomicBoolean();
-    /** One downstream response at a time; a new one has to wait for the old to let go. */
+    /** Одновременно только один ответ потока вниз; новый ждёт, пока старый отпустит слот. */
     private final Semaphore downSlot = new Semaphore(1);
     private volatile Thread pumpThread;
     private final AtomicLong attachments = new AtomicLong();
 
-    /** Guards the retransmit buffer and the sequence counters. */
+    /** Охраняет буфер переотправки и счётчики номеров кадров. */
     private final ReentrantLock resume = new ReentrantLock();
     private final Condition acknowledged = resume.newCondition();
     private final Deque<Pending> unacked = new ArrayDeque<>();
@@ -127,10 +131,10 @@ final class HttpCarrierSession implements WebSocketSession {
     private int unackedBytes;
 
     /**
-     * Serializes the upstream side and guards {@link #lastBatch}. Each POST carries a batch of
-     * frames and the client sends one at a time, but nothing in HTTP guarantees that: two
-     * requests racing would hand the mux frames out of order, and for a byte stream order is
-     * everything.
+     * Выстраивает в одну линию сторону потока вверх и охраняет {@link #lastBatch}. Каждый POST
+     * несёт пачку кадров, и клиент отправляет их по одному за раз, но в HTTP ничто этого не
+     * гарантирует: два запроса, пришедшие наперегонки, отдали бы мультиплексору кадры не по
+     * порядку, а для байтового потока порядок — это всё.
      */
     private final ReentrantLock inbound = new ReentrantLock();
     private long lastBatch;
@@ -138,16 +142,16 @@ final class HttpCarrierSession implements WebSocketSession {
     private volatile int textLimit = 64 * 1024;
     private volatile int binaryLimit = Framing.MAX_FRAME;
 
-    /** A downstream frame that has been written but not yet confirmed. */
+    /** Кадр потока вниз, который записан, но ещё не подтверждён. */
     private record Pending(long seq, byte[] frame) {
     }
 
-    /** Told once when a session ends, so its owner can forget it and notify the handler. */
+    /** Ему сообщают один раз, когда сессия кончилась: владелец забывает её и дёргает обработчик. */
     interface Closer {
         void closed(HttpCarrierSession session, CloseStatus status);
     }
 
-    /** Thrown when a client asks to continue from a point this session cannot produce. */
+    /** Бросается, когда клиент просит продолжить с точки, которую эта сессия выдать не может. */
     static final class CannotResume extends IOException {
         CannotResume(String message) {
             super(message);
@@ -164,19 +168,19 @@ final class HttpCarrierSession implements WebSocketSession {
     }
 
     /**
-     * Claim the downstream slot, displacing a writer that has not yet noticed its response is
-     * dead. Displacing is the point: in the usual case the client knows the response broke long
-     * before the server's write fails, and without this its first attempt to come back would be
-     * refused by a corpse. Nothing is lost by displacing, because an unacknowledged frame is
-     * retransmitted on the new response whether the old writer managed to send it or not.
+     * Занять слот потока вниз, вытеснив писателя, который ещё не заметил, что его ответ мёртв.
+     * Вытеснение здесь и есть смысл: обычно клиент узнаёт об обрыве ответа задолго до того, как
+     * у сервера свалится запись, и без этого его первую попытку вернуться отшил бы труп.
+     * Вытеснением ничего не теряется: неподтверждённый кадр переотправляется в новом ответе
+     * независимо от того, успел старый писатель его отдать или нет.
      *
-     * @return false if the previous writer would not let go in time; the caller answers 409 and
-     *         the client tries again shortly
+     * @return false, если предыдущий писатель не отпустил слот вовремя; вызывающий отвечает 409,
+     *         и клиент пробует ещё раз чуть позже
      */
     boolean attachDown() {
         Thread holder = pumpThread;
         if (holder != null) {
-            holder.interrupt(); // wakes it out of waiting for a frame
+            holder.interrupt(); // выдёргивает его из ожидания кадра
         }
         try {
             if (!downSlot.tryAcquire(ATTACH_WAIT_MS, TimeUnit.MILLISECONDS)) {
@@ -190,7 +194,7 @@ final class HttpCarrierSession implements WebSocketSession {
         return true;
     }
 
-    /** Whether frames from {@code fromSeq + 1} onwards can still be produced. */
+    /** Можно ли ещё выдать кадры начиная с {@code fromSeq + 1}. */
     boolean canResumeFrom(long fromSeq) {
         resume.lock();
         try {
@@ -200,12 +204,12 @@ final class HttpCarrierSession implements WebSocketSession {
         }
     }
 
-    /** How many times this session has had to be resumed, for {@code /status}. */
+    /** Сколько раз эту сессию приходилось восстанавливать — для {@code /status}. */
     long resumes() {
         return Math.max(0, attachments.get() - 1);
     }
 
-    /** Unconfirmed bytes held for a possible retransmit, for {@code /status}. */
+    /** Неподтверждённые байты, которые держим на случай переотправки — для {@code /status}. */
     int unackedBytes() {
         resume.lock();
         try {
@@ -215,19 +219,19 @@ final class HttpCarrierSession implements WebSocketSession {
         }
     }
 
-    /** The upstream lock; held while a batch of frames is handed to the handler. */
+    /** Замок потока вверх; держится, пока пачку кадров отдают обработчику. */
     ReentrantLock inboundLock() {
         return inbound;
     }
 
     /**
-     * Decide what to do with an upstream batch. Must be called with {@link #inboundLock} held.
+     * Решить, что делать с пачкой потока вверх. Вызывать с захваченным {@link #inboundLock}.
      *
-     * @return true to apply it, false if it is a retry of a batch already applied &mdash; the
-     *         client could not tell whether our answer was lost on the way back, so it asked
-     *         again, and applying the same frames twice would duplicate bytes in a stream
-     * @throws CannotResume if a batch was skipped: frames are missing and no later state can
-     *                      be reconstructed from what arrived
+     * @return true — применять; false — это повтор уже применённой пачки: клиент не мог знать,
+     *         потерялся ли наш ответ по пути назад, поэтому спросил снова, а применить те же
+     *         кадры дважды значит продублировать байты внутри потока
+     * @throws CannotResume если пачку пропустили: кадров не хватает, и из того, что пришло, уже
+     *                      не собрать никакое последующее состояние
      */
     boolean beginBatch(long batch) throws CannotResume {
         if (batch <= lastBatch) {
@@ -240,22 +244,22 @@ final class HttpCarrierSession implements WebSocketSession {
         return true;
     }
 
-    /** Record a batch as applied. Must be called with {@link #inboundLock} held. */
+    /** Отметить пачку применённой. Вызывать с захваченным {@link #inboundLock}. */
     void batchApplied(long batch) {
         lastBatch = batch;
     }
 
-    /** The client confirming it holds every downstream frame through {@code through}. */
+    /** Клиент подтверждает, что держит все кадры потока вниз до {@code through} включительно. */
     void onAck(long through) {
         resume.lock();
         try {
             if (through >= nextSeq) {
-                // It claims frames we never wrote. Something is badly confused; carrying on
-                // would mean trusting its next claim too.
+                // Он заявляет кадры, которых мы никогда не писали. Что-то сильно поехало;
+                // продолжать значило бы поверить и в следующее его заявление.
                 log.warn("client {} acknowledged frame {} but only {} were sent, closing",
                         id, through, nextSeq - 1);
-                // Safe to close while holding this: the lock is reentrant and closing takes
-                // nothing that waits on a thread which might want it.
+                // Закрывать, держа этот замок, безопасно: он реентрантный, и закрытие не берёт
+                // ничего, что ждало бы поток, которому этот замок может понадобиться.
                 close(CloseStatus.PROTOCOL_ERROR);
                 return;
             }
@@ -272,18 +276,18 @@ final class HttpCarrierSession implements WebSocketSession {
         }
     }
 
-    /** Queue a frame for the downstream response, as {@link #sendMessage} does. */
+    /** Поставить кадр в очередь на ответ потока вниз, как это делает {@link #sendMessage}. */
     void enqueue(byte[] frame) throws IOException {
         if (closed.get()) {
             return;
         }
         try {
             if (!outbound.offer(frame, OFFER_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
-                // End the session here rather than only reporting it. The caller logs a failed
-                // send and carries on, which is right for a WebSocket, where a send that fails
-                // means a socket the container will close anyway. Nothing closes this carrier
-                // but us, and a frame quietly dropped from a byte stream is corruption the
-                // peer has no way to detect.
+                // Здесь сессию заканчиваем, а не просто сообщаем о проблеме. Вызывающий
+                // логирует неудачную отправку и идёт дальше — для WebSocket'а это верно, там
+                // сорвавшаяся отправка означает сокет, который контейнер и так закроет. Этот
+                // транспорт не закрывает никто, кроме нас, а кадр, тихо выпавший из байтового
+                // потока, — это порча данных, которую соседу нечем обнаружить.
                 log.warn("client {} is not draining the tunnel, closing the session", id);
                 close(CloseStatus.SESSION_NOT_RELIABLE);
                 throw new IOException("client is not draining the tunnel, gave up on session " + id);
@@ -295,23 +299,24 @@ final class HttpCarrierSession implements WebSocketSession {
     }
 
     /**
-     * Write frames to a downstream response until it ends. Blocks the calling thread for as
-     * long as that response lives, which is not the same as the life of the session.
+     * Писать кадры в ответ потока вниз, пока тот не кончится. Блокирует вызывающий поток на всё
+     * время жизни этого ответа, а это не то же самое, что время жизни сессии.
      *
-     * <p>Starts by replaying everything the client has not confirmed, then carries on with new
-     * frames. A {@code PING} is queued first so the response headers go out immediately,
-     * telling the client the carrier is usable rather than leaving it to guess from silence.
-     * Each batch is flushed, because a tunnel that waits for a buffer to fill would add latency
-     * to every request and could stall an exchange where one side is waiting to hear back.
+     * <p>Начинает с того, что переотправляет всё, что клиент не подтвердил, а потом переходит к
+     * новым кадрам. Первым в очередь ставится {@code PING}, чтобы заголовки ответа ушли сразу и
+     * сказали клиенту, что транспорт рабочий, а не оставляли его догадываться по тишине. Каждая
+     * пачка флашится, потому что туннель, который ждёт, пока наполнится буфер, добавлял бы
+     * задержку к каждому запросу и мог бы застопорить обмен, где одна сторона ждёт ответа.
      *
-     * <p>When this returns the session is left alive and the slot released. That is the whole
-     * difference resumption makes: a response ending is a thing to recover from, and only the
-     * keepalive reaper &mdash; which asks whether the <em>client</em> is still answering, not
-     * whether a particular response is still open &mdash; decides that a session is over.
+     * <p>Когда метод возвращается, сессия остаётся живой, а слот — отпущенным. В этом вся
+     * разница, которую вносит восстановление: кончившийся ответ — это то, из чего надо
+     * выкарабкаться, и только отстрел замолчавших сессий по keepalive — который спрашивает,
+     * отвечает ли ещё <em>клиент</em>, а не открыт ли ещё конкретный ответ — решает, что сессия
+     * кончилась.
      */
     void pumpTo(OutputStream out, long fromSeq) {
-        // A pooled thread may carry an interrupt meant for the writer that used it last; the
-        // flag would otherwise end this response before it sent anything.
+        // Поток из пула может нести прерывание, адресованное писателю, который пользовался им
+        // до нас; иначе этот флаг прибил бы наш ответ ещё до того, как он что-то отправил.
         Thread.interrupted();
         pumpThread = Thread.currentThread();
         long attachment = attachments.incrementAndGet();
@@ -323,7 +328,7 @@ final class HttpCarrierSession implements WebSocketSession {
                                 + "resumed {} time(s) so far)",
                         id, fromSeq, replay.size(), resumes());
             }
-            // Harmless if it is dropped: a greeting is not tunnel traffic.
+            // Если он потеряется — не беда: приветствие это не трафик туннеля.
             outbound.offer(Frames.ping());
             for (Pending p : replay) {
                 Framing.write(out, p.seq(), p.frame());
@@ -333,7 +338,7 @@ final class HttpCarrierSession implements WebSocketSession {
             while (true) {
                 batch.clear();
                 batch.add(outbound.take());
-                outbound.drainTo(batch); // whatever else is already waiting, in one flush
+                outbound.drainTo(batch); // всё остальное, что уже ждёт, — одним флашем
 
                 int upToPoison = batch.size();
                 for (int i = 0; i < batch.size(); i++) {
@@ -342,10 +347,11 @@ final class HttpCarrierSession implements WebSocketSession {
                         break;
                     }
                 }
-                // Record the whole batch before writing any of it. A frame taken out of the
-                // queue is only safe once it is in the retransmit buffer: write first and a
-                // failure part-way through the batch would drop the frames still in hand, and
-                // because they were never numbered the gap would be invisible to both ends.
+                // Записать всю пачку в буфер, прежде чем писать хоть один кадр. Кадр, вынутый
+                // из очереди, в безопасности только когда он уже в буфере переотправки: если
+                // писать сначала, то сбой на середине пачки потерял бы кадры, которые ещё на
+                // руках, а поскольку номера им так и не выдали, пропуск был бы невидим обеим
+                // сторонам.
                 List<Pending> pending = new ArrayList<>(upToPoison);
                 for (int i = 0; i < upToPoison; i++) {
                     pending.add(reserve(batch.get(i)));
@@ -359,28 +365,29 @@ final class HttpCarrierSession implements WebSocketSession {
                 }
             }
         } catch (InterruptedException e) {
-            // A newer downstream is taking over, or the session is going away.
+            // Нас сменяет более новый поток вниз, или сессия уходит.
             log.debug("downstream of {} handed over", id);
         } catch (CannotResume e) {
             log.warn("cannot resume {}: {}", id, e.getMessage());
             close(CloseStatus.SERVER_ERROR);
         } catch (IOException e) {
-            // The response is gone. The session is not: the client is expected to come back
-            // and ask to continue, and until it does, or stops answering keepalives, its
-            // streams and reverse listeners stay exactly as they are.
+            // Ответа больше нет. Сессия — есть: мы ждём, что клиент вернётся и попросит
+            // продолжить, и пока он этого не сделал или не перестал отвечать на keepalive, его
+            // потоки и обратные слушатели остаются точно такими, какими были.
             log.debug("downstream of {} ended: {}", id, e.toString());
         } finally {
             pumpThread = null;
-            // Do not leave the flag set on a pooled thread, where the next task would inherit it.
+            // Не оставляем флаг выставленным на потоке из пула — его унаследовала бы следующая
+            // задача.
             Thread.interrupted();
             downSlot.release();
         }
     }
 
     /**
-     * Confirm everything through {@code fromSeq} and return what still has to be written again.
-     * The client asking to continue from a point is itself proof that it holds everything up to
-     * it, so this doubles as an acknowledgement.
+     * Подтвердить всё до {@code fromSeq} включительно и вернуть то, что ещё надо записать
+     * заново. Сама просьба клиента продолжить с какой-то точки — доказательство, что всё до неё
+     * у него есть, так что она заодно работает подтверждением.
      */
     private List<Pending> replayFrom(long fromSeq) throws CannotResume {
         resume.lock();
@@ -404,17 +411,17 @@ final class HttpCarrierSession implements WebSocketSession {
     }
 
     /**
-     * Take the next sequence number for a frame and keep the frame for a possible retransmit.
-     * Waits when the buffer is full, which is the backpressure a client that reads nothing
-     * deserves; the frame is recorded before it is written, so a frame lost in a failed write
-     * is still a frame we can send again.
+     * Взять для кадра следующий номер и отложить кадр на случай переотправки. Когда буфер
+     * полон — ждёт, и это ровно то обратное давление, которого заслуживает клиент, не читающий
+     * ничего; кадр попадает в буфер до записи, так что кадр, потерянный на сорвавшейся записи,
+     * всё равно остаётся кадром, который мы можем отправить снова.
      */
     private Pending reserve(byte[] frame) throws IOException, InterruptedException {
         resume.lock();
         try {
             long waitNanos = TimeUnit.MILLISECONDS.toNanos(ACK_TIMEOUT_MS);
-            // An empty buffer always takes one more frame, so a frame larger than the whole
-            // budget can never wedge the session.
+            // В пустой буфер всегда влезает ещё один кадр, так что кадр, который больше всего
+            // бюджета, не может заклинить сессию.
             while (!unacked.isEmpty() && unackedBytes + frame.length > RESUME_BUFFER_BYTES) {
                 if (closed.get()) {
                     throw new IOException("session " + id + " closed while waiting to send");
@@ -443,7 +450,7 @@ final class HttpCarrierSession implements WebSocketSession {
             payload.get(frame);
             enqueue(frame);
         } else if (message instanceof PingMessage) {
-            // The handler's keepalive, translated into something an HTTP body can carry.
+            // keepalive обработчика, переведённый в то, что способно проехать в HTTP-теле.
             enqueue(Frames.ping());
         } else {
             log.debug("ignoring a {} on the HTTP carrier {}", message.getClass().getSimpleName(), id);
@@ -465,15 +472,15 @@ final class HttpCarrierSession implements WebSocketSession {
         if (!closed.compareAndSet(false, true)) {
             return;
         }
-        // Clear first: a full queue would have no room for the sentinel, and nothing left
-        // in it will ever be written now anyway.
+        // Сначала чистим: в полной очереди не нашлось бы места для маркера, а то, что в ней
+        // осталось, всё равно уже никогда не будет записано.
         outbound.clear();
         outbound.offer(POISON);
         resume.lock();
         try {
             unacked.clear();
             unackedBytes = 0;
-            acknowledged.signalAll(); // let go of anything waiting to be acknowledged
+            acknowledged.signalAll(); // отпускаем всех, кто ждёт подтверждения
         } finally {
             resume.unlock();
         }

@@ -11,14 +11,13 @@ import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
 /**
- * A proxy that passes ordinary HTTP through and refuses to carry a WebSocket upgrade,
- * answering 400 instead. This is the network the fallback transport exists for: nothing is
- * broken, nothing is unreachable, and the upgrade simply never completes.
+ * Прокси, который пропускает обычный HTTP и отказывается нести WebSocket-upgrade, отвечая на него
+ * 400. Это ровно та сеть, ради которой и существует запасной транспорт: ничего не сломано, ничего
+ * недостижимого нет, просто upgrade никогда не доходит до конца.
  *
- * <p>Simulating it this way rather than, say, pointing the client at a path that happens to
- * 404 is what makes the test mean something: the client has to discover the problem the way it
- * would in a real network, from a handshake that fails while the same host keeps serving
- * requests perfectly well.
+ * <p>Воспроизводить это именно так, а не, скажем, направив клиента на путь, который отдаёт 404, —
+ * то, что придаёт тесту смысл: клиент должен обнаружить проблему так же, как обнаружил бы её в
+ * настоящей сети, — по неудавшемуся рукопожатию, пока тот же хост прекрасно обслуживает запросы.
  */
 final class UpgradeBlockingProxy implements AutoCloseable {
 
@@ -80,8 +79,8 @@ final class UpgradeBlockingProxy implements AutoCloseable {
                 client.close();
                 return;
             }
-            // Everything else is forwarded verbatim, including the body that follows the head
-            // and any further requests on this connection.
+            // Всё остальное пробрасывается дословно, включая тело, которое идёт за головой,
+            // и все дальнейшие запросы по этому соединению.
             Socket server = new Socket();
             server.connect(new InetSocketAddress("127.0.0.1", targetPort), 5_000);
             server.getOutputStream().write(head);
@@ -93,7 +92,7 @@ final class UpgradeBlockingProxy implements AutoCloseable {
         }
     }
 
-    /** Read up to and including the blank line that ends a request head, and no further. */
+    /** Читает голову запроса до пустой строки включительно — и ни байта дальше. */
     private static byte[] readHead(InputStream in) throws IOException {
         ByteArrayOutputStream head = new ByteArrayOutputStream();
         int[] tail = new int[4];
@@ -124,7 +123,7 @@ final class UpgradeBlockingProxy implements AutoCloseable {
                     out.flush();
                 }
             } catch (IOException ignored) {
-                // either end going away ends this direction
+                // уход любого из концов заканчивает это направление
             } finally {
                 closeQuiet(a);
                 closeQuiet(b);

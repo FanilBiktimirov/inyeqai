@@ -24,8 +24,8 @@ class FramesTest {
 
     @Test
     void openCarriesHighPortsAndNegativeIds() {
-        // The server tags its ids with the top bit, so streamId is routinely negative, and
-        // ports above 32767 must survive the 16-bit field unsigned.
+        // Сервер помечает свои id старшим битом, поэтому streamId сплошь и рядом отрицательный,
+        // а порты выше 32767 должны пережить 16-битное поле без знака.
         Frame f = Frames.decode(Frames.open(0x80000001, "h", 65535));
         assertEquals(0x80000001, f.streamId);
         assertEquals(65535, f.port);
@@ -55,8 +55,8 @@ class FramesTest {
 
     @Test
     void tunnelFramesAreNotCarrierFrames() {
-        // The transports intercept carrier frames and pass everything else to the mux, so a
-        // tunnel frame wrongly classed as the carrier's would simply vanish.
+        // Транспорты вылавливают транспортные кадры, а всё остальное отдают в мультиплексор,
+        // поэтому туннельный кадр, ошибочно записанный в транспортные, просто исчезнет.
         assertFalse(Frames.isCarrier(Frames.OPEN));
         assertFalse(Frames.isCarrier(Frames.DATA));
         assertFalse(Frames.isCarrier(Frames.CLOSE));
@@ -110,12 +110,12 @@ class FramesTest {
     void rejectsMalformedFrames() {
         assertThrows(IllegalArgumentException.class, () -> Frames.decode(new byte[0]));
         assertThrows(IllegalArgumentException.class, () -> Frames.decode(new byte[] {99, 0, 0, 0, 1}));
-        // CLOSE missing most of its stream id
+        // CLOSE, у которого обрезана почти вся часть с id потока
         assertThrows(IllegalArgumentException.class, () -> Frames.decode(new byte[] {Frames.CLOSE, 0}));
-        // OPEN claiming a host longer than the frame
+        // OPEN, который обещает хост длиннее самого кадра
         assertThrows(IllegalArgumentException.class,
                 () -> Frames.decode(new byte[] {Frames.OPEN, 0, 0, 0, 1, 0, 40, 'a'}));
-        // WINDOW with no credit in it is a protocol error, not a no-op
+        // WINDOW без кредита внутри — ошибка протокола, а не пустая операция
         assertThrows(IllegalArgumentException.class,
                 () -> Frames.decode(new byte[] {Frames.WINDOW, 0, 0, 0, 1, 0, 0, 0, 0}));
     }

@@ -29,9 +29,9 @@ import com.laptopkit.tunnel.common.ForwardSpec;
 import com.laptopkit.tunnel.common.Reverse;
 
 /**
- * {@code GET /status} is the runtime view of the tunnel, so the things worth asserting are
- * that it is actually gated by the token and that the numbers it reports move when real
- * traffic goes through.
+ * {@code GET /status} — это взгляд на туннель в рантайме, поэтому проверять стоит две вещи: что
+ * он и правда закрыт токеном и что цифры, которые он показывает, двигаются, когда через туннель
+ * идёт настоящий трафик.
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -69,7 +69,7 @@ class StatusEndpointTest {
                     new ClientConnection(url(), TOKEN, 25, List.of(local), List.of(reverse));
             Thread t = runAsync(conn);
             try {
-                // Hold a connection open through the forward so a live stream is on display.
+                // Держим соединение через проброс открытым, чтобы в выдаче был живой поток.
                 try (Socket held = connect(localPort)) {
                     held.setSoTimeout(15_000);
                     OutputStream out = held.getOutputStream();
@@ -88,8 +88,9 @@ class StatusEndpointTest {
                     assertFalse(body.contains("to clients 0 B"),
                             "bytes echoed back to the client should have been counted:\n" + body);
 
-                    // Pin the per-stream line. It used to be built as text and parsed back
-                    // apart on spaces, which mangled every byte count into the next column.
+                    // Закрепляем строку про отдельный поток. Раньше её собирали как текст и
+                    // разбирали обратно по пробелам, из-за чего каждый счётчик байт уезжал
+                    // в соседнюю колонку.
                     Pattern streamLine = Pattern.compile(
                             "^ {4}(\\d+) +127\\.0\\.0\\.1:" + echo.port()
                                     + " +open +\\S+ +sent +\\d+(\\.\\d+)? [A-Z]+ +received +\\d+(\\.\\d+)? [A-Z]+$",

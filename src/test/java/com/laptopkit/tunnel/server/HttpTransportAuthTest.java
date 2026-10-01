@@ -13,10 +13,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
 /**
- * A second way in is a second way to get the token wrong. The WebSocket endpoint refuses the
- * handshake without one; every endpoint of the HTTP transport has to refuse just as firmly,
- * because each one on its own is enough to use the tunnel: {@code /connect} opens a session,
- * {@code /up} injects frames into one, {@code /down} reads what the server is sending.
+ * Второй вход — это второй способ ошибиться с токеном. WebSocket-эндпойнт без токена не даёт
+ * рукопожатия; каждый эндпойнт HTTP-транспорта должен отказывать так же твёрдо, потому что
+ * любого из них в одиночку хватает, чтобы пользоваться туннелем: {@code /connect} открывает
+ * сессию, {@code /up} вливает в неё кадры, {@code /down} читает то, что отправляет сервер.
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -38,16 +38,16 @@ class HttpTransportAuthTest {
 
     @Test
     void postingFramesIntoAnUnknownSessionWithoutATokenIsRefused() throws Exception {
-        // 401 rather than 404: an unauthenticated caller must not even learn whether a
-        // session id exists.
+        // 401, а не 404: тот, кто не прошёл аутентификацию, не должен даже узнать, существует
+        // ли такой id сессии.
         assertEquals(401, post("/tunnel/http/up/http-whatever?batch=1", null).statusCode());
     }
 
     @Test
     void withoutATokenNothingAboutASessionIsRevealed() throws Exception {
-        // The guarantee is about sessions, not about the endpoint: a 401 already tells a caller
-        // the path exists, and that is fine. What must not differ is the answer for a session
-        // that exists and one that does not, or an unauthenticated caller could enumerate them.
+        // Гарантия про сессии, а не про эндпойнт: 401 и так говорит вызывающему, что путь есть,
+        // и это нормально. Различаться не должны ответы для существующей сессии и для той,
+        // которой нет, иначе их можно перебрать без аутентификации.
         HttpResponse<String> real = post("/tunnel/http/connect", "tunnel:secret");
         String existing = real.body().trim();
         assertEquals(401, post("/tunnel/http/up/" + existing + "?batch=1", null).statusCode());
@@ -56,8 +56,8 @@ class HttpTransportAuthTest {
 
     @Test
     void aBatchWithoutANumberIsRefused() throws Exception {
-        // Past the token, a batch with no number cannot be told from a retry, so it is refused
-        // rather than guessed at.
+        // Дальше токена: пачку без номера не отличить от повтора, поэтому ей отказывают,
+        // а не угадывают номер.
         assertEquals(400, post("/tunnel/http/up/http-whatever", "tunnel:secret").statusCode());
     }
 

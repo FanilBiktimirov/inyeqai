@@ -7,49 +7,50 @@ import java.io.OutputStream;
 import java.nio.ByteBuffer;
 
 /**
- * Frame boundaries for a carrier that has none.
+ * Границы кадров для транспорта, у которого их нет.
  *
- * <p>A WebSocket delivers one message per send, so {@link Frames} needs no length field
- * there. An HTTP body is a plain byte stream: the same frames travelling over it have to say
- * how long they are.
+ * <p>WebSocket доставляет по одному сообщению на отправку, поэтому там {@link Frames} обходится
+ * без поля длины. HTTP-тело — обычный поток байт: те же кадры, идущие поверх него, обязаны
+ * говорить, какой они длины.
  *
  * <pre>
- *   upstream     [length:4][frame bytes]              repeated until the stream ends
- *   downstream   [sequence:8][length:4][frame bytes]  repeated until the stream ends
+ *   вверх        [length:4][frame bytes]              повторяется до конца потока
+ *   вниз         [sequence:8][length:4][frame bytes]  повторяется до конца потока
  * </pre>
  *
- * <p>Only the downstream carries a sequence number, because only the downstream is resumed
- * frame by frame: a response that dies has to be replaced by one that picks up exactly where
- * the client stopped, and nothing else can say where that was. Upstream is a series of whole
- * requests instead, so a batch number on the request is enough to tell a retry from new work.
+ * <p>Номер есть только у потока вниз, потому что только поток вниз возобновляется кадр за
+ * кадром: умерший ответ приходится заменять другим, который подхватит ровно там, где клиент
+ * остановился, и ничем больше это место не определить. Вверх вместо этого идёт череда целых
+ * запросов, так что номера пачки в запросе хватает, чтобы отличить повтор от новой работы.
  *
- * <p>The length is checked against {@link #MAX_FRAME} before a single byte is allocated, so
- * a desynchronised or hostile peer cannot make the reader reserve an arbitrary buffer by
- * claiming a huge frame.
+ * <p>Длина сверяется с {@link #MAX_FRAME} до того, как будет выделен хоть один байт, так что
+ * рассинхронизированная или враждебная сторона не заставит читателя зарезервировать
+ * произвольный буфер, заявив огромный кадр.
  */
 public final class Framing {
 
     /**
-     * Largest frame accepted off the wire. Comfortably above the 16 KB payload chunks the
-     * mux produces; anything near it means the stream is out of step, not real traffic.
+     * Самый большой кадр, который принимается с провода. С запасом больше 16-килобайтных кусков
+     * полезной нагрузки, которые нарезает мультиплексор; всё, что близко к пределу, означает, что
+     * поток разъехался, а не настоящий трафик.
      */
     public static final int MAX_FRAME = 1024 * 1024;
 
     private Framing() {
     }
 
-    /** One frame read off a sequenced stream. */
+    /** Один кадр, прочитанный из нумерованного потока. */
     public record Sequenced(long seq, byte[] frame) {
     }
 
-    /** Write one length-prefixed frame. Does not flush; callers decide when to. */
+    /** Пишет один кадр с префиксом длины. Flush не делает: когда его делать, решает вызывающий. */
     public static void write(OutputStream out, byte[] frame) throws IOException {
         checkSize(frame);
         writeInt(out, frame.length);
         out.write(frame);
     }
 
-    /** Write one frame with its sequence number, for a stream that may have to be resumed. */
+    /** Пишет один кадр с его номером — для потока, который может понадобиться возобновить. */
     public static void write(OutputStream out, long seq, byte[] frame) throws IOException {
         checkSize(frame);
         writeLong(out, seq);
@@ -76,23 +77,23 @@ public final class Framing {
     }
 
     /**
-     * Read one frame.
+     * Читает один кадр.
      *
-     * @return the frame, or null at a clean end of stream: an end exactly on a frame boundary,
-     *         with no part of a header read
-     * @throws IOException on a truncated frame or header, a bad length, or an I/O failure. A
-     *                     stream that stops inside a frame is a protocol error and must never be
-     *                     mistaken for the end of one: upstream that would mean applying part of
-     *                     a batch and reporting the whole of it as done.
+     * @return кадр или null при чистом конце потока: конец ровно на границе кадра, когда ни одного
+     *         байта заголовка прочитать не успели
+     * @throws IOException при оборванном кадре или заголовке, негодной длине или сбое
+     *                     ввода-вывода. Поток, оборвавшийся внутри кадра, — ошибка протокола, и
+     *                     принимать её за конец кадра нельзя никогда: вверх это означало бы
+     *                     применить часть пачки и отчитаться о ней целиком как о сделанной.
      */
     public static byte[] read(DataInputStream in) throws IOException {
         int first = in.read();
         if (first < 0) {
-            return null; // the peer closed between frames, which is how a stream ends
+            return null; // сторона закрылась между кадрами — так поток и заканчивается
         }
         byte[] header = new byte[4];
         header[0] = (byte) first;
-        in.readFully(header, 1, 3); // EOFException, an IOException, if the header is cut short
+        in.readFully(header, 1, 3); // EOFException, то есть IOException, если заголовок обрезан
         int len = ByteBuffer.wrap(header).getInt();
         if (len < 0 || len > MAX_FRAME) {
             throw new IOException("bad frame length " + len);
@@ -103,16 +104,16 @@ public final class Framing {
     }
 
     /**
-     * Read one frame and its sequence number from a sequenced stream.
+     * Читает один кадр и его номер из нумерованного потока.
      *
-     * @return the frame, or null at a clean end of stream
-     * @throws IOException on a truncated frame or header, or a bad sequence or length, as
-     *                     {@link #read} does and for the same reason
+     * @return кадр или null при чистом конце потока
+     * @throws IOException при оборванном кадре или заголовке, негодном номере или длине — так же,
+     *                     как {@link #read}, и по той же причине
      */
     public static Sequenced readSequenced(DataInputStream in) throws IOException {
         int first = in.read();
         if (first < 0) {
-            return null; // the response ended between frames
+            return null; // ответ закончился между кадрами
         }
         byte[] header = new byte[8 + 4];
         header[0] = (byte) first;
@@ -120,8 +121,8 @@ public final class Framing {
         ByteBuffer b = ByteBuffer.wrap(header);
         long seq = b.getLong();
         if (seq < 1) {
-            // Zero is what a client sends to mean "I hold nothing", so it can never be a real
-            // frame number; anything below it is nonsense.
+            // Ноль клиент отправляет в смысле «я не держу ничего», так что настоящим номером
+            // кадра он быть не может; всё, что меньше, — бессмыслица.
             throw new IOException("bad frame sequence " + seq);
         }
         int len = b.getInt();
@@ -133,7 +134,7 @@ public final class Framing {
         return new Sequenced(seq, frame);
     }
 
-    /** Wrap a stream for {@link #read} or {@link #readSequenced}. */
+    /** Обёртка над потоком для {@link #read} или {@link #readSequenced}. */
     public static DataInputStream reader(InputStream in) {
         return new DataInputStream(in);
     }

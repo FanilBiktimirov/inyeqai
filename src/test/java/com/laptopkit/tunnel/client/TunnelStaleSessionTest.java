@@ -22,14 +22,14 @@ import com.laptopkit.tunnel.common.Frames;
 import com.laptopkit.tunnel.common.Reverse;
 
 /**
- * The reconnect case that used to leave a reverse forward dead: a client disappears without
- * closing its TCP connection, so the server still believes the session is alive and keeps
- * that session's reverse port bound. When the same client comes back, it has to be able to
- * bind the port again.
+ * Случай переподключения, после которого обратный проброс раньше оставался мёртвым: клиент
+ * исчезает, не закрыв своё TCP-соединение, поэтому сервер по-прежнему считает сессию живой и
+ * держит занятым её обратный порт. Когда тот же клиент возвращается, он обязан снова суметь
+ * занять этот порт.
  *
- * <p>The pong timeout here is deliberately far longer than the test, so the periodic reaper
- * cannot be what frees the port. Only the check performed when a new client asks for a port
- * an unresponsive session is holding can make this pass.
+ * <p>Таймаут на pong здесь нарочно сделан гораздо длиннее самого теста, чтобы порт не мог
+ * освободил периодический отстрел замолчавших сессий. Пройти этот тест можно только за счёт проверки, которая
+ * выполняется, когда новый клиент просит порт, занятый неотвечающей сессией.
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -51,8 +51,8 @@ class TunnelStaleSessionTest {
                 zombie.sendBinary(Frames.config(List.of(reverse)));
                 awaitListening(reversePort);
 
-                // Let the session miss a keepalive round so the server can tell it is gone.
-                // It never answers a ping, which is exactly what a suspended host looks like.
+                // Даём сессии пропустить круг keepalive, чтобы сервер понял: её больше нет.
+                // Она никогда не отвечает на ping — ровно так выглядит уснувший хост.
                 Thread.sleep(4_000);
 
                 ClientConnection conn =
@@ -98,8 +98,8 @@ class TunnelStaleSessionTest {
     }
 
     private static String roundTrip(int port, String message) throws Exception {
-        // The takeover happens when the new client's CONFIG arrives, so the port may be
-        // briefly closed between the old listener dying and the new one binding.
+        // Перехват происходит, когда приходит CONFIG нового клиента, так что между смертью
+        // старого слушателя и привязкой нового порт может на мгновение оказаться закрыт.
         long deadline = System.currentTimeMillis() + 30_000;
         while (true) {
             try (Socket sock = new Socket("127.0.0.1", port)) {
@@ -117,7 +117,7 @@ class TunnelStaleSessionTest {
                     return sb.toString();
                 }
             } catch (IOException e) {
-                // fall through to retry
+                // проваливаемся на повторную попытку
             }
             if (System.currentTimeMillis() > deadline) {
                 fail("reverse port " + port + " never served the reconnecting client");

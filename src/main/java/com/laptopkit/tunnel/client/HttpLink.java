@@ -27,45 +27,45 @@ import com.laptopkit.tunnel.common.Frames;
 import com.laptopkit.tunnel.common.Framing;
 
 /**
- * The client half of the HTTP fallback transport, presented as a {@link WebSocket}.
+ * Клиентская половина запасного HTTP-транспорта, выданная наружу как {@link WebSocket}.
  *
- * <p>It is the mirror image of the trick on the server. {@link ClientConnection} holds
- * everything that makes the client a client &mdash; the mux, the local listeners, the send
- * queue, the keepalive watchdog, the health endpoint's view of the world &mdash; and none of
- * that is about WebSockets. So instead of a second client for HTTP, this class implements the
- * small interface {@code ClientConnection} actually uses and feeds the same listener
- * callbacks the JDK would. The connection logic stays in one place for both transports.
+ * <p>Это зеркальное отражение того же приёма на сервере. {@link ClientConnection} держит всё,
+ * что делает клиента клиентом — мультиплексор, локальные слушатели, очередь отправки,
+ * keepalive-watchdog, картину мира health-эндпойнта, — и ничто из этого к WebSocket отношения не
+ * имеет. Поэтому вместо второго клиента под HTTP этот класс реализует тот небольшой интерфейс,
+ * которым {@code ClientConnection} на самом деле пользуется, и зовёт те же колбэки слушателя,
+ * что позвала бы JDK. Логика соединения остаётся в одном месте для обоих транспортов.
  *
- * <p>Underneath: one long-lived {@code GET} carries frames down, and frames going up are
- * batched into short {@code POST}s. HTTP/1.1 is forced rather than negotiated, because the
- * whole point of this transport is to look like the most ordinary traffic possible to
- * whatever is in the middle.
+ * <p>Под капотом: один долгоживущий {@code GET} везёт кадры вниз, а кадры наверх собираются
+ * пачками в короткие {@code POST}. HTTP/1.1 задан принудительно, а не согласован, потому что весь
+ * смысл этого транспорта — выглядеть для всего, что стоит в середине, максимально обычным
+ * трафиком.
  *
- * <p>The carrier's own {@code PING}, {@code PONG}, {@code BYE} and {@code ACK} frames are
- * produced and consumed here, so the mux never sees them, and the pongs they carry are reported
- * through {@link WebSocket.Listener#onPong}. That is what keeps the client's liveness check, and
- * the {@code stale} verdict on its health endpoint, meaning exactly the same thing on both
- * transports.
+ * <p>Собственные кадры транспорта — {@code PING}, {@code PONG}, {@code BYE} и {@code ACK} —
+ * здесь же и производятся, и потребляются, так что мультиплексор их вообще не видит, а
+ * принесённые ими pong докладываются через {@link WebSocket.Listener#onPong}. Именно поэтому
+ * проверка живости у клиента и вердикт {@code stale} на его health-эндпойнте значат на обоих
+ * транспортах ровно одно и то же.
  *
- * <h2>Resumption</h2>
+ * <h2>Восстановление</h2>
  *
- * <p>Neither half of an HTTP conversation ending tells you what the other end did with it, so
- * each direction recovers differently:
+ * <p>Ни одна из половин HTTP-разговора, закончившись, не говорит, что с ней сделал другой конец,
+ * поэтому каждое направление восстанавливается по-своему:
  *
  * <ul>
- *   <li>A <b>downstream</b> response that ends is replaced by a new one asking to continue after
- *       the last frame number that arrived. Frames are numbered by the server and must arrive
- *       consecutively; a gap or a repeat is treated as fatal rather than tolerated, because
- *       either one means bytes missing or doubled inside a stream, which nothing above this
- *       layer could detect.
- *   <li>An <b>upstream</b> POST that fails is retried with the same batch number, which the
- *       server uses to tell a retry from new work. Retrying without that would risk applying the
- *       same frames twice.
+ *   <li>Закончившийся ответ <b>потока вниз</b> заменяется новым, который просит продолжить после
+ *       последнего доехавшего номера кадра. Кадры нумерует сервер, и приходить они должны
+ *       подряд; пропуск или повтор считается фатальным, а не терпимым, потому что и то и другое
+ *       значит, что внутри потока байты пропали или удвоились, — а этого ничто выше этого слоя
+ *       обнаружить не смогло бы.
+ *   <li>Не прошедший POST <b>потока вверх</b> повторяется с тем же номером пачки, по которому
+ *       сервер отличает повтор от новой работы. Повторять без этого значило бы рисковать
+ *       применить одни и те же кадры дважды.
  * </ul>
  *
- * <p>This is what the whole transport is for. A proxy that caps how long a response may last
- * will cut the downstream on a timer, and without resumption every cut would tear down every
- * stream in the tunnel; with it the cut costs one round trip and the streams never notice.
+ * <p>Ради этого транспорт и существует. Прокси, ограничивающий, сколько может длиться ответ,
+ * обрежет поток вниз по таймеру, и без восстановления каждый такой обрыв рвал бы все потоки в
+ * туннеле; с восстановлением обрыв стоит одного круга, а потоки его даже не замечают.
  */
 final class HttpLink implements WebSocket {
 
@@ -74,32 +74,39 @@ final class HttpLink implements WebSocket {
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(15);
     private static final Duration UP_TIMEOUT = Duration.ofSeconds(30);
     /**
-     * How long to keep trying to resume before giving up and rebuilding the tunnel. It is only a
-     * backstop: the server answers 404 or 410 the moment the session is truly unrecoverable, and
-     * that answer ends things at once. Kept well under a server's default pong timeout, past
-     * which there would be no session left to resume anyway.
+     * Сколько пытаться восстановиться, прежде чем сдаться и пересобрать туннель. Это только
+     * страховка: как только сессия действительно необратимо потеряна, сервер отвечает 404 или
+     * 410, и этот ответ заканчивает всё сразу. Держится заметно ниже дефолтного pong-таймаута
+     * сервера, после которого восстанавливать было бы уже нечего.
      */
     private static final Duration RESUME_DEADLINE = Duration.ofSeconds(30);
-    /** Pause between attempts to resume, long enough not to spin, short enough not to be felt. */
+    /**
+     * Пауза между попытками восстановиться: достаточно большая, чтобы не крутиться впустую, и
+     * достаточно маленькая, чтобы её не чувствовали.
+     */
     private static final long RETRY_PAUSE_MS = 200;
     /**
-     * Received frames after which an acknowledgement is sent even if nothing else is going up.
-     * Acknowledgements normally ride along with the WINDOW frames a download produces anyway;
-     * this covers a session whose upstream happens to be silent, so the server can still let go
-     * of what it is holding for a possible retransmit.
+     * Через сколько принятых кадров подтверждение отправляется даже когда наверх больше нечего
+     * везти. Обычно подтверждения едут попутно с кадрами WINDOW, которые скачивание и так
+     * производит; это на случай сессии, у которой поток вверх оказался молчаливым, — чтобы сервер
+     * всё равно мог отпустить то, что держит для возможной переотправки.
      */
     private static final int ACK_EVERY_FRAMES = 64;
     /**
-     * DATA frames that may be queued unsent, the same bound the WebSocket path puts on its
-     * own send queue. This is where backpressure comes from on this transport: a send is
-     * reported complete as soon as the frame is queued, so the queue itself has to push back.
-     * Control frames are never held up by it &mdash; a WINDOW frame waiting behind bulk data
-     * would stall the very stream it exists to unblock.
+     * Сколько кадров DATA может лежать в очереди неотправленными — та же граница, которую
+     * WebSocket-путь ставит своей очереди отправки. Отсюда на этом транспорте и берётся обратное
+     * давление: отправка считается завершённой, едва кадр попал в очередь, поэтому давить назад
+     * приходится самой очереди. Служебные кадры она не задерживает никогда — кадр WINDOW, ждущий
+     * за объёмными данными, застопорил бы тот самый поток, ради разблокировки которого он и
+     * существует.
      */
     private static final int MAX_INFLIGHT_DATA = 64;
-    /** Bytes one POST may carry. Batching is what keeps throughput off the round-trip floor. */
+    /**
+     * Сколько байт может увезти один POST. Сборка в пачки — то, что держит пропускную способность
+     * выше пола, заданного временем круга.
+     */
     private static final int BATCH_BYTES = 256 * 1024;
-    /** Queue sentinel that ends the upstream sender loop. */
+    /** Сигнальное значение в очереди, завершающее цикл отправки наверх. */
     private static final byte[] POISON = new byte[0];
 
     private final HttpClient http;
@@ -113,26 +120,29 @@ final class HttpLink implements WebSocket {
     private final AtomicBoolean closed = new AtomicBoolean();
     private final AtomicBoolean ended = new AtomicBoolean();
 
-    /** The response being read now; replaced on every resume. */
+    /** Ответ, который читается сейчас; заменяется при каждом восстановлении. */
     private volatile InputStream down;
-    /** Highest frame number handed to the mux. Written by the reader, read by the sender. */
+    /** Наибольший номер кадра, отданного мультиплексору. Пишет читатель, читает отправитель. */
     private volatile long receivedThrough;
-    /** Set when the server says goodbye, which is the one ending not to resume from. */
+    /**
+     * Выставляется, когда сервер попрощался: это единственный конец, с которого не надо
+     * восстанавливаться.
+     */
     private volatile boolean serverSaidBye;
-    /** Last value the reader queued an acknowledgement for; reader thread only. */
+    /** До какого кадра читатель уже поставил подтверждение в очередь; только поток читателя. */
     private long ackQueuedThrough;
-    /** Batch numbers handed to the server; sender thread only. */
+    /** Номера пачек, выданные серверу; только поток отправителя. */
     private long batchSeq;
-    /** Highest value already acknowledged to the server; sender thread only. */
+    /** Наибольшее значение, уже подтверждённое серверу; только поток отправителя. */
     private long ackSentThrough;
     private int resumes;
-    /** Completed once a goodbye has actually gone out, so a caller can wait for it. */
+    /** Завершается, когда прощание реально ушло, чтобы вызывающий мог его дождаться. */
     private volatile CompletableFuture<WebSocket> byeSent;
 
     private Thread reader;
     private Thread sender;
 
-    /** A failure no retry can mend: the session is gone, or refuses what we are sending. */
+    /** Сбой, который повтором не вылечить: сессии нет или она не принимает то, что мы шлём. */
     private static final class Unrecoverable extends IOException {
         Unrecoverable(String message) {
             super(message);
@@ -150,19 +160,20 @@ final class HttpLink implements WebSocket {
     }
 
     /**
-     * Open a session and start carrying frames. Returns once the downstream response is
-     * established, having already called {@link Listener#onOpen}.
+     * Открыть сессию и начать везти кадры. Возвращается, когда ответ с потоком вниз уже
+     * установлен и {@link Listener#onOpen} уже позван.
      *
-     * @param wsUrl the same {@code ws://} or {@code wss://} URL the WebSocket transport uses;
-     *              mapped to {@code http}/{@code https} here, so one URL serves both
-     * @throws IOException if the session cannot be opened, which the caller treats as a
-     *                     failed connection attempt and retries with backoff
+     * @param wsUrl тот же {@code ws://} или {@code wss://} URL, что берёт WebSocket-транспорт;
+     *              здесь он отображается в {@code http}/{@code https}, так что один URL годится
+     *              для обоих
+     * @throws IOException если сессию открыть не удалось — вызывающий считает это неудавшейся
+     *                     попыткой подключения и повторяет с нарастающей задержкой
      */
     static HttpLink open(String wsUrl, String auth, Listener listener) throws Exception {
         String base = httpBase(wsUrl);
         HttpClient http = HttpClient.newBuilder()
-                // Deliberately not negotiated up: this transport exists for networks that
-                // mishandle anything unusual, and HTTP/1.1 is the least unusual thing there is.
+                // Намеренно без согласования версии повыше: этот транспорт существует для сетей,
+                // которые плохо обходятся со всем необычным, а HTTP/1.1 — самое обычное, что есть.
                 .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(CONNECT_TIMEOUT)
                 .build();
@@ -182,8 +193,8 @@ final class HttpLink implements WebSocket {
             throw new IOException("http transport: server returned no session id");
         }
 
-        // No request timeout on the downstream: it is meant to stay open for the life of the
-        // tunnel, and a deadline here would cut a perfectly healthy idle one.
+        // На потоке вниз нет таймаута запроса: он и должен стоять открытым всю жизнь туннеля,
+        // а дедлайн здесь обрезал бы совершенно здоровый простаивающий поток.
         HttpResponse<InputStream> stream = http.send(
                 request(base + "/down/" + id + "?from=0", auth).GET().build(),
                 HttpResponse.BodyHandlers.ofInputStream());
@@ -201,15 +212,15 @@ final class HttpLink implements WebSocket {
     private void start() {
         sender = thread(this::senderLoop, "http-up");
         sender.start();
-        // onOpen before the reader starts: it builds the mux that incoming frames need, and a
-        // frame arriving first would land on a half-built connection.
+        // onOpen до старта читателя: он строит мультиплексор, который нужен входящим кадрам, и
+        // кадр, пришедший раньше, попал бы на недостроенное соединение.
         listener.onOpen(this);
         reader = thread(this::readerLoop, "http-down");
         reader.start();
         log.info("http transport: session {} on {}", id, base);
     }
 
-    /** {@code ws}/{@code wss} URL to the HTTP endpoints that mirror it. */
+    /** Из {@code ws}/{@code wss}-URL — в зеркалящие его HTTP-эндпойнты. */
     static String httpBase(String wsUrl) {
         String u = wsUrl;
         if (u.startsWith("wss://")) {
@@ -232,9 +243,9 @@ final class HttpLink implements WebSocket {
     }
 
     /**
-     * Read frames for as long as the session lasts, across however many responses that takes.
-     * A response ending is not the session ending: that is what {@link #resume} is for, and only
-     * when resuming fails does this report the connection as closed.
+     * Читать кадры столько, сколько живёт сессия, через сколько бы ответов это ни пришлось
+     * сделать. Конец ответа — не конец сессии: для этого и есть {@link #resume}, и только когда
+     * восстановиться не удалось, здесь сообщают, что соединение закрыто.
      */
     private void readerLoop() {
         while (!closed.get()) {
@@ -259,16 +270,16 @@ final class HttpLink implements WebSocket {
         }
     }
 
-    /** Read one response to its end. Returns normally when it has nothing more to give. */
+    /** Прочитать один ответ до конца. Возвращается нормально, когда давать больше нечего. */
     private void drain(InputStream in) throws IOException {
         DataInputStream dis = Framing.reader(in);
         Framing.Sequenced next;
         while ((next = Framing.readSequenced(dis)) != null) {
             long expected = receivedThrough + 1;
             if (next.seq() != expected) {
-                // Neither a gap nor a repeat may be tolerated: one means bytes are missing from
-                // some stream and the other means they are doubled, and in both cases everything
-                // above this layer would carry on none the wiser.
+                // Ни пропуск, ни повтор терпеть нельзя: первое значит, что из какого-то потока
+                // пропали байты, второе — что они удвоились, и в обоих случаях всё, что выше
+                // этого слоя, поехало бы дальше ни о чём не подозревая.
                 throw new IOException("frame " + next.seq() + " arrived where " + expected
                         + " was due; the tunnel has to be rebuilt");
             }
@@ -285,8 +296,8 @@ final class HttpLink implements WebSocket {
                 }
                 default -> listener.onBinary(this, ByteBuffer.wrap(frame), true);
             }
-            // Only now: this number is a promise that the frame has been dealt with, and the
-            // server drops its copy on the strength of it.
+            // Только теперь: это число — обещание, что кадр обработан, и сервер на основании
+            // этого обещания выбрасывает свою копию.
             receivedThrough = next.seq();
             if (receivedThrough - ackQueuedThrough >= ACK_EVERY_FRAMES) {
                 ackQueuedThrough = receivedThrough;
@@ -296,19 +307,21 @@ final class HttpLink implements WebSocket {
     }
 
     /**
-     * Ask for a new downstream response continuing after the last frame we hold.
+     * Попросить новый ответ с потоком вниз, продолжающий после последнего кадра, который у нас
+     * есть.
      *
-     * @return true once one is attached; false when the session cannot be resumed, having
-     *         already reported the connection closed so the caller rebuilds the tunnel
+     * @return true, когда ответ прицеплен; false, когда сессию восстановить нельзя — о закрытии
+     *         соединения к этому моменту уже сообщено, и вызывающий пересоберёт туннель
      */
     private boolean resume() {
         closeQuiet(down);
         long deadline = System.nanoTime() + RESUME_DEADLINE.toNanos();
         boolean firstTry = true;
         while (!closed.get() && System.nanoTime() < deadline) {
-            // No pause before the first attempt. A cut response is the ordinary case here and
-            // the server is usually perfectly fine, so recovery should cost one round trip
-            // rather than a fixed wait; only a server that is actually unreachable gets paced.
+            // Перед первой попыткой паузы нет. Обрезанный ответ здесь — обычное дело, и с
+            // сервером чаще всего всё в порядке, так что восстановление должно стоить одного
+            // круга, а не фиксированного ожидания; притормаживать есть смысл только с сервером,
+            // который правда недоступен.
             if (!firstTry && !pause()) {
                 return false;
             }
@@ -328,7 +341,7 @@ final class HttpLink implements WebSocket {
                 }
                 closeQuiet(res.body());
                 if (code == 409) {
-                    continue; // the previous response is still being wound up; ask again
+                    continue; // предыдущий ответ ещё доигрывается; спрашиваем снова
                 }
                 end("the server will not resume this session (" + code + ")");
                 return false;
@@ -346,7 +359,7 @@ final class HttpLink implements WebSocket {
         return false;
     }
 
-    /** @return false if the link went away while pausing */
+    /** @return false, если транспорт пропал, пока мы выжидали паузу */
     private boolean pause() {
         try {
             Thread.sleep(RETRY_PAUSE_MS);
@@ -369,8 +382,8 @@ final class HttpLink implements WebSocket {
                 batch.add(first);
                 int total = first.length;
                 boolean ending = false;
-                // Take whatever else is already waiting: one request for many frames is what
-                // keeps throughput off the one-round-trip-per-frame floor.
+                // Забираем всё, что уже ждёт: один запрос на много кадров — то, что не даёт
+                // пропускной способности упасть до пола «один круг на кадр».
                 while (total < BATCH_BYTES) {
                     byte[] next = up.poll();
                     if (next == null) {
@@ -383,8 +396,8 @@ final class HttpLink implements WebSocket {
                     batch.add(next);
                     total += next.length;
                 }
-                // Ride an acknowledgement along with whatever is going up anyway; it is nine
-                // bytes and it is what lets the server stop holding frames for a retransmit.
+                // Подтверждение едет попутно с тем, что и так идёт наверх: девять байт, и именно
+                // они позволяют серверу перестать держать кадры для переотправки.
                 long through = receivedThrough;
                 if (through > ackSentThrough) {
                     batch.add(0, Frames.ack(through));
@@ -400,8 +413,8 @@ final class HttpLink implements WebSocket {
                         }
                     }
                 } finally {
-                    // Credit is returned once the frames are really gone, so the bound means
-                    // what it says.
+                    // Кредит возвращается, когда кадры действительно ушли, — чтобы граница
+                    // значила то, что обещает.
                     dataSlots.release(countData(batch));
                 }
                 if (ending) {
@@ -418,12 +431,12 @@ final class HttpLink implements WebSocket {
     }
 
     /**
-     * Send a batch of frames as one request body, retrying the same batch number until the
-     * server accepts it or says it never will.
+     * Отправить пачку кадров одним телом запроса, повторяя с тем же номером пачки, пока сервер
+     * её не примет или не скажет, что не примет никогда.
      *
-     * <p>The batch number is what makes retrying safe. A POST that fails does not say whether
-     * the server applied it, so a plain retry could apply the same frames twice; numbered, the
-     * server answers a repeat without acting on it.
+     * <p>Безопасным повтор делает именно номер пачки. Не прошедший POST не говорит, применил его
+     * сервер или нет, поэтому простой повтор мог бы применить те же кадры дважды; а с номером
+     * сервер на повтор отвечает, но не применяет его.
      */
     private void post(long batch, List<byte[]> frames, Duration timeout)
             throws IOException, InterruptedException {
@@ -450,8 +463,8 @@ final class HttpLink implements WebSocket {
                     return;
                 }
                 if (code < 500) {
-                    // 404 and 410 in particular: the session is gone, or will not take this
-                    // batch. Nothing about trying again changes that.
+                    // В первую очередь 404 и 410: сессии нет или эту пачку она не возьмёт.
+                    // Повтор тут ничего не меняет.
                     throw new Unrecoverable("upstream batch " + batch + " answered " + code);
                 }
                 log.debug("http transport: batch {} answered {}, trying again", batch, code);
@@ -490,7 +503,7 @@ final class HttpLink implements WebSocket {
         return frame.length > 0 && frame[0] == Frames.DATA;
     }
 
-    /** Queue a frame for the next request. Control frames are never made to wait. */
+    /** Поставить кадр в очередь на следующий запрос. Служебные кадры ждать не заставляют. */
     private void offer(byte[] frame) {
         if (!closed.get()) {
             up.offer(frame);
@@ -498,11 +511,12 @@ final class HttpLink implements WebSocket {
     }
 
     /**
-     * Wait for permission to queue one more DATA frame. Polls rather than blocking outright,
-     * so a link torn down while a sender is parked here does not keep the thread forever.
+     * Дождаться разрешения поставить в очередь ещё один кадр DATA. Опрашивает, а не блокируется
+     * наглухо, чтобы транспорт, разобранный пока отправитель здесь припаркован, не держал поток
+     * вечно.
      *
-     * @return false if the link went away while waiting, in which case the frame is dropped:
-     *         the carrier is gone and its streams die with it
+     * @return false, если транспорт пропал за время ожидания; кадр тогда выбрасывается:
+     *         транспорта нет, и его потоки умирают вместе с ним
      */
     private boolean acquireDataSlot() {
         try {
@@ -517,7 +531,10 @@ final class HttpLink implements WebSocket {
         return false;
     }
 
-    /** The carrier ended for good. Reported as a close, so the caller reconnects. */
+    /**
+     * Транспорт закончился окончательно. Сообщается как закрытие, чтобы вызывающий
+     * переподключился.
+     */
     private void end(String reason) {
         if (ended.compareAndSet(false, true)) {
             log.warn("http transport: {}", reason);
@@ -539,9 +556,9 @@ final class HttpLink implements WebSocket {
             return CompletableFuture.completedFuture(this);
         }
         offer(frame);
-        // Complete as soon as the frame is queued, rather than once it has been POSTed:
-        // waiting here would let only one frame accumulate at a time and reduce every batch
-        // to a single frame, turning throughput into one round trip per 16 KB.
+        // Завершаем, едва кадр попал в очередь, а не когда он уже ушёл POST-ом: ожидание здесь
+        // давало бы копиться только одному кадру за раз и сводило бы каждую пачку к одному
+        // кадру, превращая пропускную способность в один круг на 16 КБ.
         return CompletableFuture.completedFuture(this);
     }
 
@@ -553,10 +570,10 @@ final class HttpLink implements WebSocket {
 
     @Override
     public CompletableFuture<WebSocket> sendClose(int statusCode, String reason) {
-        // Queued like anything else, so batch numbers stay in one thread's hands, and the
-        // returned future says when it actually left. The caller gives it a moment before
-        // aborting; a goodbye is worth that much because it frees the server's reverse
-        // listeners at once, but no more than that, since the link is going away regardless.
+        // В очередь, как и всё остальное, — чтобы номера пачек оставались в руках одного потока,
+        // а возвращённый future говорил, когда прощание реально ушло. Вызывающий даёт ему немного
+        // времени, прежде чем обрывать: прощание этого стоит, потому что сразу освобождает
+        // обратные слушатели на сервере, но не больше — транспорт всё равно уходит.
         CompletableFuture<WebSocket> f = new CompletableFuture<>();
         byeSent = f;
         offer(Frames.bye());
@@ -570,9 +587,9 @@ final class HttpLink implements WebSocket {
         }
         up.clear();
         up.offer(POISON);
-        // Let go of anything parked waiting to queue a DATA frame; nothing will drain now.
+        // Отпускаем всех, кто припаркован в ожидании слота под кадр DATA: вычерпывать уже некому.
         dataSlots.release(MAX_INFLIGHT_DATA);
-        // Closing the downstream is what unblocks the reader, which is parked on a read.
+        // Закрытие потока вниз — это то, что разблокирует читателя, припаркованного на чтении.
         closeQuiet(down);
         if (sender != null) {
             sender.interrupt();
@@ -583,7 +600,7 @@ final class HttpLink implements WebSocket {
         try {
             http.shutdownNow();
         } catch (Exception ignored) {
-            // nothing left to do about it; the link is gone either way
+            // сделать с этим уже нечего; транспорт так и так потерян
         }
     }
 
@@ -599,7 +616,7 @@ final class HttpLink implements WebSocket {
 
     @Override
     public void request(long n) {
-        // Frames are read as fast as they arrive; there is no demand to signal.
+        // Кадры читаются с той скоростью, с какой приходят; сообщать о спросе нечего.
     }
 
     @Override
@@ -614,8 +631,8 @@ final class HttpLink implements WebSocket {
 
     @Override
     public CompletableFuture<WebSocket> sendPong(ByteBuffer message) {
-        // Pongs are answers to PING frames and are queued by the reader itself; nothing in
-        // the client asks for one directly.
+        // Pong — это ответы на кадры PING, и их ставит в очередь сам читатель; напрямую в
+        // клиенте их никто не запрашивает.
         throw new UnsupportedOperationException("pongs are answered by the transport");
     }
 

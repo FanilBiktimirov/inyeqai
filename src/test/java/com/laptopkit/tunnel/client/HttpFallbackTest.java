@@ -23,17 +23,17 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
 /**
- * The fallback is only worth anything if it happens by itself. An operator who has to notice a
- * blocked upgrade and pass {@code --transport http} by hand would have been better served by a
- * clear error message.
+ * Переход на запасной транспорт чего-то стоит только если происходит сам. Оператору, которому
+ * надо заметить заблокированный upgrade и руками передать {@code --transport http}, куда полезнее
+ * было бы внятное сообщение об ошибке.
  *
- * <p>So this drives the whole client, reconnect loop and all, through a proxy that refuses the
- * WebSocket upgrade and forwards everything else. Nobody tells the client what is wrong with
- * the network: it tries a WebSocket, fails, and comes back over HTTP on the next attempt.
+ * <p>Поэтому здесь гоняется весь клиент целиком, вместе с циклом переподключений, через прокси,
+ * который отказывает в WebSocket-upgrade и пробрасывает всё остальное. Никто клиенту не говорит,
+ * что не так с сетью: он пробует WebSocket, падает и на следующей попытке возвращается по HTTP.
  *
- * <p>The verdict is read from the server rather than from the client's own report, so the test
- * cannot be satisfied by a client that merely believes it fell back. Sessions that arrived over
- * HTTP carry an {@code http-} prefixed id, which is what {@code /status} shows.
+ * <p>Вердикт читается с сервера, а не из собственного отчёта клиента, — чтобы тест нельзя было
+ * удовлетворить клиентом, который всего лишь считает, что переключился. Сессии, пришедшие по
+ * HTTP, несут id с префиксом {@code http-}, и именно это показывает {@code /status}.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class HttpFallbackTest {
@@ -50,8 +50,8 @@ class HttpFallbackTest {
             int localPort = freePort();
             Thread client = runClient(setup(proxy.port(), localPort, echo.port(), null));
             try {
-                // The first attempt is a WebSocket and the proxy answers 400. The client backs
-                // off, alternates, and the local listener only opens once an attempt is up.
+                // Первая попытка — WebSocket, и прокси отвечает 400. Клиент выжидает, чередует
+                // транспорты, а локальный слушатель открывается только когда попытка удалась.
                 assertEquals("through-a-hostile-proxy",
                         roundTrip(localPort, "through-a-hostile-proxy"),
                         "the tunnel should carry bytes without anyone choosing a transport");
@@ -66,7 +66,9 @@ class HttpFallbackTest {
         }
     }
 
-    /** Pinning {@code --transport ws} must not quietly fall back: a forced choice is a choice. */
+    /**
+     * Прибитый {@code --transport ws} не должен тихо переключаться: навязанный выбор — это выбор.
+     */
     @Test
     @Timeout(60)
     void aPinnedWebSocketDoesNotFallBack() throws Exception {
@@ -77,7 +79,7 @@ class HttpFallbackTest {
             Thread client = runClient(
                     setup(proxy.port(), localPort, echo.port(), Transport.WEBSOCKET));
             try {
-                // Several reconnect attempts' worth of time, all of which must fail.
+                // Времени хватает на несколько попыток переподключения, и все обязаны провалиться.
                 Thread.sleep(6_000);
                 assertTrue(serverStatus().contains("no clients connected"),
                         "a pinned WebSocket client should keep failing, not switch transports");
@@ -88,7 +90,7 @@ class HttpFallbackTest {
         }
     }
 
-    /** @param transport null for auto, which is what the first test is about */
+    /** @param transport null — это auto, именно про него первый тест */
     private static ClientSetup setup(int proxyPort, int localPort, int echoPort, Transport transport) {
         return ClientSetup.of("ws://127.0.0.1:" + proxyPort + "/tunnel", null, 5,
                 List.of(localPort + ":127.0.0.1:" + echoPort), transport, "127.0.0.1", 0);
@@ -99,7 +101,7 @@ class HttpFallbackTest {
             try {
                 TunnelClient.run(setup);
             } catch (Exception ignored) {
-                // the loop ends when the thread is interrupted
+                // цикл заканчивается, когда рабочий поток прерывают
             }
         }, "client-under-test");
         t.setDaemon(true);
@@ -107,7 +109,7 @@ class HttpFallbackTest {
         return t;
     }
 
-    /** Straight to the server, not through the proxy: this is the test's own view of truth. */
+    /** Прямо на сервер, не через прокси: это собственный взгляд теста на истину. */
     private String serverStatus() throws Exception {
         HttpResponse<String> res = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + serverPort + "/status")).build(),
@@ -132,7 +134,7 @@ class HttpFallbackTest {
         }
     }
 
-    /** Retry until the client has settled on a transport that works, or give up loudly. */
+    /** Повторяет, пока клиент не остановится на работающем транспорте, иначе падает громко. */
     private static Socket connect(int port) throws Exception {
         long deadline = System.currentTimeMillis() + 60_000;
         while (true) {

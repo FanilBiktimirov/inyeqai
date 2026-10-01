@@ -26,13 +26,14 @@ import com.laptopkit.tunnel.common.ForwardSpec;
 import com.laptopkit.tunnel.common.Reverse;
 
 /**
- * Boots the real Spring tunnel server on a random port and drives a real
- * {@link ClientConnection} against it, verifying bytes survive a round trip in both the local
- * and reverse directions.
+ * Поднимает настоящий Spring-сервер туннеля на случайном порту и гоняет против него настоящий
+ * {@link ClientConnection}, проверяя, что байты переживают круг туда-обратно и в локальном
+ * направлении, и в обратном.
  *
- * <p>Every case runs over both carriers. That is the point of parameterising rather than
- * writing a second suite: the HTTP fallback is only worth having if it meets the same bar as
- * the WebSocket, and a copied suite would drift from this one the first time either changed.
+ * <p>Каждый случай прогоняется на обоих транспортах. В этом и смысл параметризации вместо
+ * второго набора тестов: запасной HTTP-транспорт стоит иметь только если он берёт ту же планку,
+ * что и WebSocket, а скопированный набор разъехался бы с этим при первом же изменении любого
+ * из них.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class TunnelEndToEndTest {
@@ -85,9 +86,9 @@ class TunnelEndToEndTest {
     }
 
     /**
-     * A client that stops writing but keeps reading must get its answer. Before the EOF
-     * frame existed, the end of one direction tore the whole stream down and this reply
-     * never arrived.
+     * Клиент, который перестал писать, но продолжает читать, обязан получить свой ответ. Пока
+     * не было кадра EOF, конец одного направления обрушивал весь поток, и этот ответ не
+     * приходил никогда.
      */
     @ParameterizedTest
     @EnumSource(Transport.class)
@@ -114,7 +115,10 @@ class TunnelEndToEndTest {
         }
     }
 
-    /** More bytes than one flow-control window, to prove credit is returned and order kept. */
+    /**
+     * Байт больше, чем одно окно управления потоком, — чтобы доказать, что кредит возвращается
+     * и порядок сохраняется.
+     */
     @ParameterizedTest
     @EnumSource(Transport.class)
     @Timeout(180)
@@ -130,8 +134,8 @@ class TunnelEndToEndTest {
         Thread t = runAsync(conn);
         try (Socket sock = connect(localPort)) {
             sock.setSoTimeout(60_000);
-            // Write on another thread: 4 MB does not fit in any socket buffer, so writing
-            // and reading have to overlap or both ends would block forever.
+            // Пишем из отдельного потока: 4 МБ не влезут ни в один буфер сокета, так что запись
+            // и чтение обязаны идти вперемешку, иначе оба конца заблокируются навсегда.
             Thread writer = new Thread(() -> {
                 try {
                     OutputStream out = sock.getOutputStream();
@@ -139,7 +143,7 @@ class TunnelEndToEndTest {
                     out.flush();
                     sock.shutdownOutput();
                 } catch (IOException e) {
-                    // the assertion on the read side reports the real failure
+                    // настоящую ошибку сообщит проверка на стороне чтения
                 }
             }, "bulk-writer");
             writer.setDaemon(true);
@@ -162,7 +166,7 @@ class TunnelEndToEndTest {
             try {
                 conn.run();
             } catch (Exception ignored) {
-                // run() ends when the connection is stopped
+                // run() заканчивается, когда соединение останавливают
             }
         });
         t.setDaemon(true);
@@ -175,7 +179,7 @@ class TunnelEndToEndTest {
         t.join(5_000);
     }
 
-    /** Connect to a tunnel entry port, retrying until its listener is up. */
+    /** Подключается к входному порту туннеля, повторяя попытки, пока слушатель не поднимется. */
     private static Socket connect(int port) throws Exception {
         long deadline = System.currentTimeMillis() + 10_000;
         while (true) {

@@ -18,14 +18,15 @@ import com.laptopkit.tunnel.client.ClientSetup;
 import com.laptopkit.tunnel.client.TunnelClient;
 
 /**
- * One entry point, no arguments. What runs and how is decided by the fields in
- * {@link TunnelConfig}; this class only turns them into a running server, a running client, or
- * both at once.
+ * Одна точка входа, без аргументов. Что запускается и как — решают поля в
+ * {@link TunnelConfig}; этот класс только превращает их в работающий сервер, работающий
+ * клиент или и то и другое сразу.
  *
- * <p>That is the whole point of this branch. A tunnel is awkward to debug through a command
- * line: the interesting failures are in the frames between the two ends, and getting there used
- * to mean two run configurations, two terminals and a careful pair of argument lists. Here it is
- * one green arrow, and in {@link TunnelConfig.Mode#BOTH} one process with both ends in it.
+ * <p>В этом весь смысл ветки. Туннель неудобно отлаживать через командную строку:
+ * интересные поломки живут в кадрах между двумя концами, а добраться до них раньше означало
+ * две run configuration, два терминала и аккуратную пару списков аргументов. Здесь — одна
+ * зелёная стрелка, а в {@link TunnelConfig.Mode#BOTH} ещё и один процесс с обоими концами
+ * внутри.
  */
 @SpringBootApplication
 public class TunnelApplication {
@@ -34,7 +35,7 @@ public class TunnelApplication {
         switch (TunnelConfig.MODE) {
             case SERVER -> {
                 startServer();
-                Thread.currentThread().join(); // Spring's own threads keep it alive; wait here
+                Thread.currentThread().join(); // живым его держат потоки Spring; ждём здесь
             }
             case CLIENT -> runClient();
             case BOTH -> runBoth();
@@ -43,11 +44,11 @@ public class TunnelApplication {
     }
 
     /**
-     * Server first, then the client in this thread. Starting the server is synchronous, so by
-     * the time the client connects there is something to connect to.
+     * Сначала сервер, потом клиент в этом же потоке. Старт сервера синхронный, так что к
+     * моменту подключения клиента есть к чему подключаться.
      *
-     * <p>Running the client on the main thread is deliberate: it keeps the stack a debugger shows
-     * on a breakpoint short and recognisable, rather than rooted in a pool thread.
+     * <p>Клиент на главном потоке — намеренно: так стек, который отладчик показывает на
+     * брейкпоинте, остаётся коротким и узнаваемым, а не растущим из потока пула.
      */
     private static void runBoth() throws Exception {
         ConfigurableApplicationContext context = startServer();
@@ -59,15 +60,15 @@ public class TunnelApplication {
     }
 
     /**
-     * Boot the server with the fields as Spring properties, which is how Spring is configured.
+     * Поднять сервер, передав поля как свойства Spring — так Spring и настраивается.
      *
-     * <p>The properties are pushed to the front of the environment rather than handed to
-     * {@code SpringApplicationBuilder.properties}, which registers them as <em>default</em>
-     * properties &mdash; the lowest precedence there is, below {@code application.yml}. Done that
-     * way, every field here would be silently overridden by the yml: the server would come up on
-     * 8080 instead of {@link TunnelConfig#SERVER_PORT}, and the client would spend its life
-     * failing to reach a port nothing is listening on. The old command line avoided this by
-     * accident, because command-line arguments outrank the yml.
+     * <p>Свойства кладутся в начало окружения, а не отдаются
+     * {@code SpringApplicationBuilder.properties}, который регистрирует их как
+     * <em>default</em>-свойства — самый низкий приоритет, какой есть, ниже
+     * {@code application.yml}. Сделай так — и каждое поле отсюда молча перебьётся из yml:
+     * сервер поднялся бы на 8080 вместо {@link TunnelConfig#SERVER_PORT}, а клиент всю жизнь
+     * безуспешно стучался бы в порт, который никто не слушает. Старая командная строка этого
+     * избегала случайно — аргументы командной строки приоритетнее yml.
      */
     private static ConfigurableApplicationContext startServer() {
         Map<String, Object> props = new HashMap<>();
@@ -81,7 +82,7 @@ public class TunnelApplication {
         props.put("tunnel.http-fallback", TunnelConfig.HTTP_FALLBACK);
         props.put("tunnel.keepalive", TunnelConfig.SERVER_KEEPALIVE);
         props.put("tunnel.pong-timeout", TunnelConfig.PONG_TIMEOUT);
-        // Spring binds a list by index, the same way the repeated flag used to.
+        // Список Spring привязывает по индексу — так же, как раньше повторяющийся флаг.
         List<String> allow = TunnelConfig.ALLOW;
         for (int i = 0; i < allow.size(); i++) {
             props.put("tunnel.allow[" + i + "]", allow.get(i));
@@ -95,7 +96,7 @@ public class TunnelApplication {
                 .run();
     }
 
-    /** Hand the client its parameters, resolved. Blocks until the process is stopped. */
+    /** Отдать клиенту его параметры, уже разрешённые. Блокируется, пока процесс не остановят. */
     private static void runClient() throws Exception {
         ClientSetup setup;
         try {
@@ -111,7 +112,8 @@ public class TunnelApplication {
                 TunnelClient.enableVerbose();
             }
         } catch (IllegalArgumentException e) {
-            // A bad field should say which field, and say it before anything starts listening.
+            // Плохое поле должно сказать, какое именно, и сказать до того, как что-то
+            // начнёт слушать.
             System.err.println("TunnelConfig: " + e.getMessage());
             return;
         }
@@ -119,11 +121,12 @@ public class TunnelApplication {
     }
 
     /**
-     * Probe a health endpoint and exit 0 or 1, so a container HEALTHCHECK can use it.
+     * Дёрнуть health-эндпойнт и выйти с 0 или 1, чтобы этим мог пользоваться HEALTHCHECK
+     * контейнера.
      *
-     * <p>It lives in the jar because the runtime image carries no curl or wget, and adding
-     * one just to ask a local port a question is a worse trade than reusing the HTTP client
-     * already in the runtime.
+     * <p>Живёт в jar'е потому, что в runtime-образе нет ни curl, ни wget, а тащить один из
+     * них только чтобы задать локальному порту вопрос — обмен хуже, чем переиспользовать
+     * HTTP-клиент, который в runtime и так есть.
      */
     private static void healthcheck() {
         String url = TunnelConfig.HEALTHCHECK_URL;
@@ -133,8 +136,8 @@ public class TunnelApplication {
                     .send(HttpRequest.newBuilder(URI.create(url))
                                     .timeout(Duration.ofSeconds(5)).GET().build(),
                             HttpResponse.BodyHandlers.ofString());
-            // Print it either way: docker keeps this output, and "stale" vs "down" is the
-            // difference between a peer that stopped answering and no connection at all.
+            // Печатаем в любом случае: docker эту выдачу сохраняет, а "stale" против "down" —
+            // это разница между замолчавшим пиром и полным отсутствием подключения.
             System.out.print(res.body());
             System.exit(res.statusCode() >= 200 && res.statusCode() < 300 ? 0 : 1);
         } catch (Exception e) {

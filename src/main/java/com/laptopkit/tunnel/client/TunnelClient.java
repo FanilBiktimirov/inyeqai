@@ -10,11 +10,11 @@ import org.slf4j.LoggerFactory;
 
 
 /**
- * The client entry point. Parses chisel-style arguments, then loops forever: connect,
- * serve until the link drops, back off, reconnect.
+ * Точка входа клиента: вечный цикл — подключиться, обслуживать, пока связь не оборвётся,
+ * выждать нарастающую задержку, переподключиться.
  *
- * <p>What to connect to and what to forward comes from {@link ClientSetup}, built from the
- * fields in {@code TunnelConfig}. Nothing here reads a command line.
+ * <p>Куда подключаться и что пробрасывать приходит из {@link ClientSetup}, собранного из полей
+ * {@code TunnelConfig}. Командную строку здесь никто не читает.
  */
 public final class TunnelClient {
 
@@ -22,16 +22,19 @@ public final class TunnelClient {
 
     private static final long MIN_BACKOFF_MS = 1_000;
     private static final long MAX_BACKOFF_MS = 5 * 60_000;
-    /** A connection that lasted this long counts as healthy, so the backoff starts over. */
+    /**
+     * Соединение, продержавшееся столько, считается здоровым — нарастающая задержка начинается
+     * заново.
+     */
     private static final Duration SETTLED = Duration.ofSeconds(5);
 
     private TunnelClient() {
     }
 
     /**
-     * Serve until stopped: connect, carry traffic, back off, reconnect. Everything it needs
-     * arrives in {@code setup}; there is nothing to parse and nothing to get wrong in a run
-     * configuration.
+     * Работать, пока не остановят: подключиться, везти трафик, выждать нарастающую задержку,
+     * переподключиться. Всё нужное приходит в {@code setup} — разбирать нечего, и в run
+     * configuration нечего испортить.
      */
     public static void run(ClientSetup setup) throws Exception {
         Transport transport = setup.transport() == null ? Transport.WEBSOCKET : setup.transport();
@@ -41,9 +44,9 @@ public final class TunnelClient {
                         : transport.label(),
                 setup.locals().size(), setup.reverses().size());
 
-        // The health endpoint outlives any single connection: it has to keep answering
-        // while the client is between reconnect attempts, which is exactly when a probe
-        // most needs a truthful "down".
+        // Health-эндпойнт живёт дольше любого отдельного соединения: он должен продолжать
+        // отвечать, пока клиент между попытками переподключения, — а именно тогда пробе
+        // честный «down» нужнее всего.
         AtomicReference<ClientConnection> live = new AtomicReference<>();
         if (setup.healthPort() > 0) {
             try {
@@ -53,9 +56,9 @@ public final class TunnelClient {
                         + setup.healthHost() + ":" + setup.healthPort() + ": " + e);
                 return;
             } catch (NoClassDefFoundError e) {
-                // A runtime trimmed with jlink can be missing jdk.httpserver. Say which
-                // module, because the bare NoClassDefFoundError names a class nobody would
-                // connect to a health endpoint.
+                // В рантайме, обрезанном через jlink, может не оказаться jdk.httpserver.
+                // Говорим, какого модуля не хватает: сам по себе NoClassDefFoundError называет
+                // класс, который никто не свяжет с health-эндпойнтом.
                 System.err.println("client: the health endpoint needs the jdk.httpserver module, "
                         + "which this Java runtime does not have (" + e.getMessage() + ")");
                 return;
@@ -63,8 +66,9 @@ public final class TunnelClient {
         }
 
         int attempt = 0;
-        // Interruption is the way out: a client asked to stop should stop, not reconnect.
-        // Nothing interrupts this thread in normal operation, where the loop runs forever.
+        // Выход отсюда — через прерывание: клиент, которого попросили остановиться, должен
+        // остановиться, а не переподключаться. В обычной работе этот поток никто не прерывает,
+        // и цикл крутится вечно.
         while (!Thread.currentThread().isInterrupted()) {
             Duration uptime;
             String reason;
@@ -84,21 +88,23 @@ public final class TunnelClient {
                 uptime = conn.uptime();
                 reason = "connect failed (" + rootCause(e) + ")";
             }
-            // Only a connection that actually settled resets the backoff; a link failing
-            // on every attempt must keep backing off instead of hammering the server.
+            // Нарастающую задержку сбрасывает только соединение, которое правда продержалось;
+            // связь, падающая на каждой попытке, должна продолжать выжидать, а не долбить
+            // сервер.
             boolean settled = uptime.compareTo(SETTLED) >= 0;
             attempt = settled ? 0 : attempt;
             long delayMs = backoff(attempt);
             attempt++;
-            // Clear it before sleeping, so a probe during the backoff sees "down" rather
-            // than the corpse of the connection that just died.
+            // Обнуляем до сна, чтобы проба во время нарастающей задержки видела «down», а не
+            // труп только что умершего соединения.
             live.set(null);
             if (setup.transport() == null && !settled) {
-                // An attempt that never settled does not say which carrier was at fault, so
-                // the other one gets the next try. This is what carries a client through a
-                // network that refuses the WebSocket upgrade, or accepts it and then eats
-                // the frames, without anyone having to notice and pass --transport by hand.
-                // A transport that does settle is kept, because it demonstrably works.
+                // Попытка, которая так и не продержалась, не говорит, какой транспорт виноват,
+                // поэтому следующую попытку получает другой. Именно это проводит клиента через
+                // сеть, которая отказывает в апгрейде до WebSocket — или соглашается на него, а
+                // потом съедает кадры, — и никому не приходится это замечать и передавать
+                // --transport руками. Транспорт, который продержался, оставляем: он доказал,
+                // что работает.
                 transport = transport.other();
                 log.warn("{}, trying the {} transport, reconnecting in {} ms",
                         reason, transport.label(), delayMs);
@@ -115,10 +121,10 @@ public final class TunnelClient {
     }
 
     /**
-     * Turn on per-stream logging. With no Spring in client mode there is no
-     * {@code logging.level.*} to set and no logback.xml in play &mdash; the level is moved on
-     * the backend directly. Guarded by a type check so an unexpected backend degrades to a
-     * warning instead of a ClassCastException on startup.
+     * Включить логирование по каждому потоку. В клиентском режиме Spring нет, а значит, нет ни
+     * {@code logging.level.*}, который можно выставить, ни работающего logback.xml — уровень
+     * двигается прямо на бэкенде логирования. Прикрыто проверкой типа, чтобы неожиданный бэкенд
+     * выродился в предупреждение, а не в ClassCastException на старте.
      */
     public static void enableVerbose() {
         org.slf4j.Logger pkg = LoggerFactory.getLogger("com.laptopkit.tunnel");
@@ -131,19 +137,19 @@ public final class TunnelClient {
         }
     }
 
-    /** Exponential backoff, {@code MIN << attempt} capped at {@code MAX}. */
+    /** Экспоненциальная нарастающая задержка: {@code MIN << attempt} с потолком {@code MAX}. */
     static long backoff(int attempt) {
-        if (attempt >= 20) { // 1s << 20 already exceeds the cap; avoid the shift overflowing
+        if (attempt >= 20) { // 1s << 20 уже больше потолка; заодно сдвиг не переполнится
             return MAX_BACKOFF_MS;
         }
         return Math.min(MIN_BACKOFF_MS << attempt, MAX_BACKOFF_MS);
     }
 
-    /** If the URL has no path, append the default endpoint so a bare host:port works. */
+    /** Если в URL нет пути, дописываем эндпойнт по умолчанию, чтобы работал голый host:port. */
     static String normalizeUrl(String url) {
         String u = url;
         if (!u.startsWith("ws://") && !u.startsWith("wss://")) {
-            // accept http/https too, as chisel does, and map to the ws scheme
+            // принимаем и http/https, как chisel, и отображаем в ws-схему
             if (u.startsWith("https://")) {
                 u = "wss://" + u.substring("https://".length());
             } else if (u.startsWith("http://")) {

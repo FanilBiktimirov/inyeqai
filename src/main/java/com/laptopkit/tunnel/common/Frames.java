@@ -8,36 +8,38 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The wire protocol: TCP streams multiplexed over a single WebSocket, big-endian.
+ * Протокол на проводе: TCP-потоки, мультиплексированные поверх одного соединения, big-endian.
+ * Соединением может быть и WebSocket, и запасной HTTP-транспорт.
  *
  * <pre>
- *   OPEN   [1][streamId:4][hostLen:2][host][port:2]   dial host:port for this stream
- *   DATA   [2][streamId:4][payload...]                bytes for a stream, either way
- *   CLOSE  [3][streamId:4]                            stream torn down, both directions
+ *   OPEN   [1][streamId:4][hostLen:2][host][port:2]   дозвон до host:port для этого потока
+ *   DATA   [2][streamId:4][payload...]                байты потока, в любую сторону
+ *   CLOSE  [3][streamId:4]                            поток снесён, сразу в обе стороны
  *   CONFIG [4][count:2]{ bindLen:2 bind serverPort:2 dstLen:2 dst clientPort:2 }*
- *                                                     client -> server: open reverse listeners
- *   EOF    [5][streamId:4]                            sender is done writing (half-close)
- *   WINDOW [6][streamId:4][credit:4]                  receiver drained credit bytes
- *   PING   [7]                                        carrier keepalive, expects a PONG
- *   PONG   [8]                                        answer to a PING
- *   BYE    [9]                                        carrier is closing on purpose
- *   ACK    [10][through:8]                            peer holds every downstream frame to here
+ *                                                     клиент -> сервер: поднять обратные слушатели
+ *   EOF    [5][streamId:4]                            отправитель закончил писать (полузакрытие)
+ *   WINDOW [6][streamId:4][credit:4]                  получатель выгреб credit байт
+ *   PING   [7]                                        keepalive транспорта, ждёт PONG
+ *   PONG   [8]                                        ответ на PING
+ *   BYE    [9]                                        транспорт закрывается осознанно
+ *   ACK    [10][through:8]                            сторона держит все кадры вниз до сих пор
  * </pre>
  *
- * The {@code streamId} top bit marks the originator (0 = client, 1 = server) so ids
- * allocated independently on both ends never collide.
+ * Старший бит {@code streamId} помечает инициатора (0 = клиент, 1 = сервер), поэтому id,
+ * которые обе стороны раздают независимо друг от друга, никогда не пересекаются.
  *
- * <p>{@code PING}, {@code PONG}, {@code BYE} and {@code ACK} belong to the carrier, not to the
- * tunnel: they exist because the HTTP fallback transport has no ping, pong or close frames of
- * its own, and no way for a reconnecting client to say what it already received. Both HTTP ends
- * answer and consume them inside their transport layer, so neither mux ever sees one. Over a
- * WebSocket they are never sent at all &mdash; that carrier has its own, and never resumes.
+ * <p>{@code PING}, {@code PONG}, {@code BYE} и {@code ACK} принадлежат транспорту, а не
+ * туннелю: они есть потому, что у запасного HTTP-транспорта нет своих кадров ping, pong и
+ * закрытия, и нет способа переподключающемуся клиенту сказать, что он уже получил. Оба
+ * HTTP-конца сами отвечают на них и съедают их внутри своего транспортного слоя, так что ни один
+ * мультиплексор их не видит никогда. По WebSocket они не отправляются вообще — у того транспорта
+ * есть свои, и он никогда не возобновляется.
  *
- * <p>{@code EOF} mirrors a TCP half-close: the peer stops reading that direction but keeps
- * writing the other one, which plain {@code CLOSE} would have cut off. {@code WINDOW}
- * carries the credit-based flow control: a sender may have at most
- * {@link Mux#WINDOW_BYTES} unacknowledged bytes in flight per stream, so one stalled
- * destination cannot make the tunnel buffer without bound.
+ * <p>{@code EOF} повторяет полузакрытие TCP: сторона перестаёт читать в одном направлении, но
+ * продолжает писать в другом, которое обычный {@code CLOSE} бы отрезал. {@code WINDOW} несёт
+ * управление потоком по кредитам: у отправителя может быть не больше
+ * {@link Mux#WINDOW_BYTES} неподтверждённых байт в пути на поток, так что один залипший
+ * адресат не заставит туннель буферизовать без границы.
  */
 public final class Frames {
 
@@ -86,8 +88,8 @@ public final class Frames {
     }
 
     /**
-     * Carrier keepalive. Returns a shared array because these frames are immutable,
-     * single-byte, and sent on a timer: allocating one each time would be pure waste.
+     * Keepalive транспорта. Возвращает общий массив, потому что эти кадры неизменяемые,
+     * однобайтовые и уходят по таймеру: выделять новый каждый раз — чистая трата.
      */
     public static byte[] ping() {
         return PING_BYTES;
@@ -97,20 +99,20 @@ public final class Frames {
         return PONG_BYTES;
     }
 
-    /** Carrier closing on purpose, so the peer can release the session at once. */
+    /** Транспорт закрывается осознанно, чтобы другая сторона сразу отпустила сессию. */
     public static byte[] bye() {
         return BYE_BYTES;
     }
 
     /**
-     * Confirm every downstream frame up to {@code through}. This is what lets the server drop
-     * frames from its retransmit buffer, and what a resuming client's claim is checked against.
+     * Подтверждает все кадры вниз до {@code through}. Именно это позволяет серверу выбрасывать
+     * кадры из буфера переотправки, и с этим же сверяется заявка возобновляющегося клиента.
      */
     public static byte[] ack(long through) {
         return ByteBuffer.allocate(1 + 8).put(ACK).putLong(through).array();
     }
 
-    /** True for the carrier-level frames the transports handle themselves. */
+    /** True для кадров уровня транспорта, с которыми транспорты разбираются сами. */
     public static boolean isCarrier(byte type) {
         return type == PING || type == PONG || type == BYE || type == ACK;
     }
@@ -138,9 +140,9 @@ public final class Frames {
     }
 
     /**
-     * Decode one message. Throws {@link IllegalArgumentException} on anything malformed,
-     * including a frame that ends early; callers treat that as a fatal session error
-     * rather than guessing at the sender's intent.
+     * Разбирает одно сообщение. Бросает {@link IllegalArgumentException} на всё кривое,
+     * включая кадр, оборвавшийся раньше времени; вызывающий считает это фатальной ошибкой
+     * сессии, а не поводом угадывать, что отправитель имел в виду.
      */
     public static Frame decode(byte[] msg) {
         try {

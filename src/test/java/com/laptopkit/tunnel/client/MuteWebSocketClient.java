@@ -9,14 +9,14 @@ import java.security.SecureRandom;
 import java.util.Base64;
 
 /**
- * A deliberately unhelpful WebSocket client for tests: it completes the handshake, can send
- * one binary frame, and then goes silent &mdash; it never reads and never answers a ping.
+ * Нарочно бесполезный WebSocket-клиент для тестов: доводит рукопожатие до конца, умеет отправить
+ * один бинарный кадр, а дальше молчит — он никогда не читает и никогда не отвечает на ping.
  *
- * <p>No real client library behaves this way, which is the point. It reproduces the state a
- * suspended laptop leaves behind: the TCP connection is still established from the server's
- * side, so the session and the reverse listeners it owns look alive, yet nothing will ever
- * come back. Killing a normal client process cannot reproduce that, because the operating
- * system closes its sockets on the way out.
+ * <p>Ни одна настоящая клиентская библиотека так себя не ведёт, и в этом весь смысл. Так
+ * воспроизводится состояние, которое оставляет после себя уснувший ноутбук: со стороны сервера
+ * TCP-соединение по-прежнему установлено, так что сессия и принадлежащие ей обратные слушатели
+ * выглядят живыми, а обратно уже ничего никогда не придёт. Убийством обычного клиентского
+ * процесса такого не получить: операционная система на выходе закрывает его сокеты.
  */
 final class MuteWebSocketClient implements AutoCloseable {
 
@@ -55,7 +55,7 @@ final class MuteWebSocketClient implements AutoCloseable {
         }
     }
 
-    /** Read up to the blank line that ends the response headers, returning the status line. */
+    /** Читает до пустой строки, которой кончаются заголовки ответа, и возвращает строку статуса. */
     private String readHeaders() throws IOException {
         InputStream in = socket.getInputStream();
         StringBuilder sb = new StringBuilder();
@@ -77,12 +77,12 @@ final class MuteWebSocketClient implements AutoCloseable {
         return eol < 0 ? all : all.substring(0, eol);
     }
 
-    /** Send one masked binary frame, as a client must. */
+    /** Отправляет один маскированный бинарный кадр — как и положено клиенту. */
     void sendBinary(byte[] payload) throws IOException {
         byte[] mask = new byte[4];
         RANDOM.nextBytes(mask);
         OutputStream out = socket.getOutputStream();
-        out.write(0x82); // FIN + opcode 2 (binary)
+        out.write(0x82); // FIN + опкод 2 (бинарный кадр)
         int len = payload.length;
         if (len < 126) {
             out.write(0x80 | len);

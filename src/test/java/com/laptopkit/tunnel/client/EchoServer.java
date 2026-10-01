@@ -10,8 +10,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.function.Consumer;
 
 /**
- * A throwaway TCP server on a random loopback port, used as the far end of a tunnel in the
- * end-to-end tests. Closing it stops the accept loop.
+ * Одноразовый TCP-сервер на случайном порту loopback — дальний конец туннеля в сквозных тестах.
+ * Закрытие останавливает цикл приёма соединений.
  */
 final class EchoServer implements AutoCloseable {
 
@@ -41,15 +41,15 @@ final class EchoServer implements AutoCloseable {
         t.start();
     }
 
-    /** Sends every byte straight back. */
+    /** Отправляет каждый байт сразу обратно. */
     static EchoServer echoing() throws IOException {
         return new EchoServer(EchoServer::pipeBack);
     }
 
     /**
-     * Reads until the client half-closes, then reports how many bytes arrived. A client
-     * that shuts down its write side and waits for this reply only gets an answer if the
-     * tunnel carried the half-close instead of tearing the whole stream down.
+     * Читает, пока клиент не сделает полузакрытие, и затем сообщает, сколько байт пришло.
+     * Клиент, который закрыл свою сторону записи и ждёт этот ответ, получит его только если
+     * туннель пронёс полузакрытие, а не обрушил весь поток целиком.
      */
     static EchoServer countingUntilEof() throws IOException {
         return new EchoServer(sock -> {

@@ -7,16 +7,16 @@ import com.laptopkit.tunnel.common.ForwardSpec;
 import com.laptopkit.tunnel.common.Reverse;
 
 /**
- * Everything the client needs to run, already resolved: the URL normalised, the forwards parsed
- * into the two kinds, the transport decided.
+ * Всё, что клиенту нужно для работы, уже разобранное: URL нормализован, пробросы разложены на два
+ * вида, транспорт выбран.
  *
- * <p>It exists so that nothing downstream of here has to know where the values came from.
- * {@code TunnelConfig} is what a person edits; this is what the client is handed, and a test can
- * build one directly without touching global state.
+ * <p>Он существует, чтобы ничему ниже по коду не приходилось знать, откуда взялись значения.
+ * {@code TunnelConfig} — то, что правит человек; а это — то, что отдают клиенту, и тест может
+ * собрать такой объект напрямую, не трогая глобальное состояние.
  *
- * @param transport the carrier to use, or null for auto: start on a WebSocket and alternate
- *                  after any attempt that fails to settle
- * @param healthPort where the client's health endpoint listens; zero for none
+ * @param transport какой транспорт использовать, или null для auto: начать с WebSocket и
+ *                  чередовать после каждой попытки, которая не продержалась
+ * @param healthPort где слушает health-эндпойнт клиента; ноль — не слушает нигде
  */
 public record ClientSetup(
         String url,
@@ -45,7 +45,7 @@ public record ClientSetup(
         reverses = List.copyOf(reverses);
     }
 
-    /** Split chisel-style forward strings into the local and reverse ones. */
+    /** Разложить строки пробросов в стиле chisel на локальные и обратные. */
     public static ClientSetup of(String url, String auth, int keepaliveSeconds,
                                  List<String> forwards, Transport transport,
                                  String healthHost, int healthPort) {

@@ -21,10 +21,10 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import com.laptopkit.tunnel.common.ForwardSpec;
 
 /**
- * The point of the client's health endpoint is that it reports the state of the tunnel, not
- * of the process. These tests therefore check the two answers a liveness probe cannot give
- * on its own: 503 while the process is perfectly alive but the tunnel is not, and 200 only
- * once the far end is actually answering.
+ * Смысл health-эндпойнта клиента в том, что он показывает состояние туннеля, а не процесса.
+ * Поэтому тесты проверяют два ответа, которые liveness-проба сама по себе дать не может:
+ * 503, пока процесс совершенно жив, а туннеля нет, и 200 — только когда дальний конец
+ * действительно отвечает.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class ClientHealthTest {
@@ -61,13 +61,15 @@ class ClientHealthTest {
                 assertEquals("up\n", get(health.port(), "/healthz").body());
                 String status = get(health.port(), "/status").body();
                 assertTrue(status.contains("tunnel client: up"), status);
-                // Which carrier is in use, so an operator can see that auto picked HTTP.
+                // Эндпойнт называет транспорт, который в работе. Здесь это websocket: туннель
+                // поднят напрямую, без выбора по auto. Важно само наличие строки — когда
+                // транспорт выберет автоматика, только она и покажет, что выбран был HTTP.
                 assertTrue(status.contains("transport: websocket"), status);
                 assertTrue(status.contains("last pong"), status);
                 assertTrue(status.contains("forward 127.0.0.1:" + localPort), status);
                 assertTrue(status.contains("127.0.0.1:" + echo.port()), status);
 
-                // Dropping the tunnel has to flip the verdict, with the process untouched.
+                // Обрыв туннеля обязан перевернуть вердикт, при том что процесс не тронут.
                 conn.stop();
                 t.join(5_000);
                 HttpResponse<String> after = get(health.port(), "/healthz");
@@ -80,7 +82,10 @@ class ClientHealthTest {
         }
     }
 
-    /** {@code --keepalive 0s} leaves no evidence either way; that must be said, not faked. */
+    /**
+     * При {@code --keepalive 0s} доказательств нет ни за, ни против; это надо прямо сказать,
+     * а не выдумывать ответ.
+     */
     @Test
     @Timeout(60)
     void withKeepaliveOffItSaysTheCheckIsUnavailable() throws Exception {
@@ -103,10 +108,11 @@ class ClientHealthTest {
     }
 
     /**
-     * The mapping from verdict to HTTP code is the whole contract a probe relies on, and
-     * STALE is the one case an integration test cannot easily stage: the client's own
-     * watchdog tears the link down within a keepalive tick of the pong going stale, so the
-     * window where a probe can observe it is narrow. Pin the codes directly.
+     * Соответствие вердикта и HTTP-кода — весь контракт, на который опирается проба, а STALE —
+     * единственный случай, который интеграционным тестом так просто не подстроить: сторожевой
+     * таймер самого клиента рвёт связь в пределах одного такта keepalive после того, как pong
+     * протух, так что окно, в котором проба успеет это увидеть, узкое. Поэтому коды
+     * закрепляем напрямую.
      */
     @Test
     void everyVerdictMapsToTheRightCode() {

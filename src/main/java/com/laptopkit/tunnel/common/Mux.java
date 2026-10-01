@@ -24,52 +24,53 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Multiplexes many TCP streams over one WebSocket. Shared by both ends: each side keeps a
- * {@code streamId -> Stream} map, pumps socket bytes out as DATA frames, and writes
- * incoming DATA frames back to the matching socket.
+ * Мультиплексирует много TCP-потоков поверх одного соединения — WebSocket или запасного
+ * HTTP-транспорта, разницы отсюда не видно. Общий для обеих сторон: каждая
+ * держит у себя карту {@code streamId -> Stream}, выкачивает байты из сокета кадрами DATA и
+ * пишет входящие кадры DATA обратно в соответствующий сокет.
  *
- * <p>Threading is the point of this class. The frame-dispatch path ({@code onOpen},
- * {@code onData}, {@code onEof}, {@code onClose}, {@code onWindow}) never blocks on socket
- * I/O: it only hands work to per-stream threads. Dialing a destination and writing to a
- * socket both happen off that path, so one unreachable host or one stalled reader cannot
- * stall every other stream sharing the tunnel.
+ * <p>Главное в этом классе — многопоточность. Путь разбора кадров ({@code onOpen},
+ * {@code onData}, {@code onEof}, {@code onClose}, {@code onWindow}) никогда не блокируется на
+ * вводе-выводе сокета: он только раздаёт работу рабочим потокам, своим на каждый поток туннеля.
+ * И дозвон до адресата, и запись в сокет живут вне этого пути, так что один недоступный хост
+ * или один залипший получатель не могут застопорить все остальные потоки в туннеле.
  *
- * <p>Each direction of each stream has a {@link #WINDOW_BYTES} credit window. A sender
- * blocks once that many bytes are unacknowledged, and the receiver returns credit as it
- * drains bytes into its socket. Without this a fast local reader feeding a slow tunnel
- * would buffer without bound.
+ * <p>У каждого направления каждого потока есть окно кредитов на {@link #WINDOW_BYTES} байт.
+ * Отправитель блокируется, как только столько байт остаётся неподтверждёнными, а получатель
+ * возвращает кредит по мере того, как выгребает байты в свой сокет. Без этого быстрый локальный
+ * читатель при медленном туннеле раздувал бы очередь без границы.
  *
- * <p>The {@code sender} sink must be safe to call from many threads and must not throw; it
- * may block, which is how backpressure reaches the pump threads. Both the Spring server
- * and the JDK client wrap their send path accordingly.
+ * <p>Приёмник {@code sender} должен безопасно вызываться из многих потоков и не должен бросать
+ * исключений; блокироваться ему можно — именно так обратное давление доходит до потоков-насосов.
+ * И Spring-сервер, и JDK-клиент оборачивают свой путь отправки соответственно.
  */
 public final class Mux {
 
-    /** Opens a TCP connection to a destination; supplied per side. */
+    /** Открывает TCP-соединение до адресата; каждая сторона подставляет своё. */
     public interface Dialer {
         Socket dial(String host, int port) throws IOException;
     }
 
-    /** Decides whether the peer may have us dial {@code host:port}. */
+    /** Решает, можно ли по просьбе другой стороны дозваниваться до {@code host:port}. */
     public interface Policy {
         boolean allows(String host, int port);
     }
 
     private static final Logger log = LoggerFactory.getLogger(Mux.class);
 
-    /** Unacknowledged bytes a sender may have in flight per stream direction. */
+    /** Сколько неподтверждённых байт отправитель может держать в пути на направление потока. */
     public static final int WINDOW_BYTES = 256 * 1024;
 
     private static final int CHUNK = 16 * 1024;
     /**
-     * Hard cap on bytes queued for one stream. A peer honouring the window never reaches
-     * it; one ignoring the window is a protocol violation, and we drop its stream rather
-     * than buffer whatever it sends.
+     * Жёсткий предел на байты, стоящие в очереди одного потока. Сторона, уважающая окно, до него
+     * никогда не доберётся; сторона, игнорирующая окно, нарушает протокол — и мы роняем её поток,
+     * а не буферизуем всё, что она присылает.
      */
     private static final int QUEUE_LIMIT = 2 * WINDOW_BYTES;
-    /** Queue sentinel for "peer is done writing", kept in order behind pending DATA. */
+    /** Маркер в очереди: «сторона закончила писать»; стоит по порядку за ещё не отданными DATA. */
     private static final Object EOF_MARK = new Object();
-    /** How long a blocked sender waits before rechecking that its stream is still alive. */
+    /** Сколько заблокированный отправитель ждёт, прежде чем проверить, жив ли ещё его поток. */
     private static final long WINDOW_POLL_MS = 200;
 
     private static final Policy ALLOW_ALL = (host, port) -> true;
@@ -101,15 +102,15 @@ public final class Mux {
         this.policy = policy == null ? ALLOW_ALL : policy;
     }
 
-    /** One multiplexed TCP connection. */
+    /** Одно мультиплексированное TCP-соединение. */
     private static final class Stream {
         final int id;
-        /** Where this stream goes, as {@code host:port}; for logs and status only. */
+        /** Куда идёт этот поток, в виде {@code host:port}; только для логов и статуса. */
         final String dst;
         final long openedAtNanos = System.nanoTime();
         final BlockingQueue<Object> inbound = new LinkedBlockingQueue<>();
         final AtomicInteger queued = new AtomicInteger();
-        /** Credit for bytes *we* may still send. */
+        /** Кредит на байты, которые *мы* ещё можем отправить. */
         final Semaphore window = new Semaphore(WINDOW_BYTES);
         final AtomicBoolean sentEof = new AtomicBoolean();
         final AtomicBoolean recvEof = new AtomicBoolean();
@@ -129,27 +130,27 @@ public final class Mux {
         }
     }
 
-    /** Fresh stream id for a connection this side accepted. Top bit tags the originator. */
+    /** Новый id потока для соединения, принятого этой стороной. Старший бит помечает инициатора. */
     public int nextId() {
         int id = counter.getAndIncrement() & 0x7fffffff;
         return serverSide ? (id | 0x80000000) : id;
     }
 
     /**
-     * Register a socket we accepted on a listener, before its OPEN frame goes out. Pair it
-     * with {@link #startOutbound(int)}:
+     * Регистрирует сокет, который мы приняли на слушателе, до того как уйдёт его кадр OPEN.
+     * Работает в паре с {@link #startOutbound(int)}:
      *
      * <pre>
-     *   mux.prepareOutbound(id, socket);
+     *   mux.prepareOutbound(id, socket, dst);
      *   send(Frames.open(id, host, port));
      *   mux.startOutbound(id);
      * </pre>
      *
-     * <p>Registering first is what makes the gap around the OPEN safe. The peer may answer
-     * with CLOSE (it refused, or could not dial) before we have started relaying; with the
-     * stream already in the map that CLOSE lands on it and the socket is closed, instead of
-     * arriving for an unknown id and leaving the caller's connection hanging open forever.
-     * Starting the threads only afterwards keeps DATA from overtaking its own OPEN.
+     * <p>Именно регистрация заранее делает зазор вокруг OPEN безопасным. Другая сторона может
+     * ответить CLOSE (отказала или не смогла дозвониться) ещё до того, как мы начали
+     * перекладывать байты; раз поток уже в карте, этот CLOSE попадёт в него и сокет закроется,
+     * а не придёт на неизвестный id, оставив соединение вызывающего висеть открытым навсегда.
+     * А запуск потоков только после этого не даёт DATA обогнать свой же OPEN.
      */
     public void prepareOutbound(int streamId, Socket socket, String dst) {
         Stream s = new Stream(streamId, dst);
@@ -164,11 +165,11 @@ public final class Mux {
         }
     }
 
-    /** Begin relaying a stream registered by {@link #prepareOutbound}. */
+    /** Начинает перекладывать поток, зарегистрированный через {@link #prepareOutbound}. */
     public void startOutbound(int streamId) {
         Stream s = streams.get(streamId);
         if (s == null || s.dead.get() || shuttingDown) {
-            return; // the peer already refused it, or we are going away
+            return; // другая сторона уже отказала, или мы уходим
         }
         streamsOpened.incrementAndGet();
         log.debug("stream {} open, peer dials {}", label(streamId), s.dst);
@@ -176,9 +177,9 @@ public final class Mux {
     }
 
     /**
-     * Peer asked us to dial host:port for this stream. Registers the stream immediately so
-     * DATA arriving while the dial is still in flight is queued rather than dropped, then
-     * dials off the dispatch thread.
+     * Другая сторона попросила нас дозвониться до host:port для этого потока. Регистрирует поток
+     * сразу, чтобы DATA, пришедшие пока дозвон ещё в пути, встали в очередь, а не потерялись,
+     * и только потом дозванивается — вне потока разбора кадров.
      */
     public void onOpen(int streamId, String host, int port, Dialer dialer) {
         Stream s = new Stream(streamId, host + ":" + port);
@@ -216,7 +217,7 @@ public final class Mux {
         });
     }
 
-    /** Bytes arrived for a stream; queue them for its writer thread. */
+    /** Для потока пришли байты; ставим их в очередь к его пишущему потоку. */
     public void onData(int streamId, byte[] payload) {
         Stream s = streams.get(streamId);
         if (s == null || s.dead.get()) {
@@ -230,7 +231,7 @@ public final class Mux {
         s.inbound.add(payload);
     }
 
-    /** Peer is done writing this stream; half-close our side once pending bytes are out. */
+    /** Сторона закончила писать в этот поток; полузакрываем свой, когда отдадим остаток байт. */
     public void onEof(int streamId) {
         Stream s = streams.get(streamId);
         if (s != null && !s.dead.get()) {
@@ -238,7 +239,7 @@ public final class Mux {
         }
     }
 
-    /** Peer granted us credit to send more on this stream. */
+    /** Другая сторона выдала нам кредит, чтобы отправить в этот поток ещё. */
     public void onWindow(int streamId, int credit) {
         Stream s = streams.get(streamId);
         if (s != null) {
@@ -246,7 +247,7 @@ public final class Mux {
         }
     }
 
-    /** Peer tore a stream down; drop our side without echoing a CLOSE back. */
+    /** Другая сторона снесла поток; убираем свою сторону, не отправляя CLOSE в ответ. */
     public void onClose(int streamId) {
         Stream s = streams.remove(streamId);
         if (s != null) {
@@ -267,27 +268,27 @@ public final class Mux {
         pool.shutdownNow();
     }
 
-    /** Live streams right now. */
+    /** Сколько потоков живо прямо сейчас. */
     public int openStreams() {
         return streams.size();
     }
 
-    /** Streams this mux has carried since it was created. */
+    /** Сколько потоков этот мультиплексор пронёс с момента создания. */
     public long streamsOpened() {
         return streamsOpened.get();
     }
 
-    /** Bytes read from local sockets and sent into the tunnel. */
+    /** Байты, прочитанные из локальных сокетов и отправленные в туннель. */
     public long bytesToPeer() {
         return bytesToPeer.get();
     }
 
-    /** Bytes received from the tunnel and written to local sockets. */
+    /** Байты, принятые из туннеля и записанные в локальные сокеты. */
     public long bytesFromPeer() {
         return bytesFromPeer.get();
     }
 
-    /** Every live stream, for the status view. */
+    /** Все живые потоки — для экрана статуса. */
     public List<StreamInfo> streams() {
         List<StreamInfo> out = new ArrayList<>();
         for (Stream s : streams.values()) {
@@ -302,7 +303,7 @@ public final class Mux {
         pool.execute(() -> pumpLoop(s));
     }
 
-    /** Tell the peer this stream never came up, and forget it. */
+    /** Сообщает другой стороне, что поток так и не поднялся, и забывает его. */
     private void reject(Stream s) {
         streams.remove(s.id, s);
         s.dead.set(true);
@@ -310,7 +311,7 @@ public final class Mux {
         sender.accept(Frames.close(s.id));
     }
 
-    /** Frame-dispatch -> socket: drain the queue into the socket, returning credit. */
+    /** Разбор кадров -> сокет: выгребает очередь в сокет, возвращая кредит. */
     private void writerLoop(Stream s) {
         Socket socket = s.socket;
         try {
@@ -329,8 +330,8 @@ public final class Mux {
                 s.queued.addAndGet(-chunk.length);
                 s.received.addAndGet(chunk.length);
                 bytesFromPeer.addAndGet(chunk.length);
-                // Credit is returned only once the bytes have actually left our hands, so
-                // the window really tracks what the destination has absorbed.
+                // Кредит возвращается только после того, как байты реально ушли из наших рук,
+                // чтобы окно действительно отражало то, что адресат уже впитал.
                 sender.accept(Frames.window(s.id, chunk.length));
             }
         } catch (InterruptedException e) {
@@ -340,7 +341,7 @@ public final class Mux {
         }
     }
 
-    /** Socket -> frame-sender: relay bytes out, respecting the peer's window. */
+    /** Сокет -> отправка кадров: перекладывает байты наружу, уважая окно другой стороны. */
     private void pumpLoop(Stream s) {
         Socket socket = s.socket;
         byte[] buf = new byte[CHUNK];
@@ -352,13 +353,13 @@ public final class Mux {
                     continue;
                 }
                 if (!acquireWindow(s, n)) {
-                    return; // stream died or we are shutting down
+                    return; // поток умер, или мы выключаемся
                 }
                 sender.accept(Frames.data(s.id, buf, 0, n));
                 s.sent.addAndGet(n);
                 bytesToPeer.addAndGet(n);
             }
-            // Clean EOF: announce it and let the other direction keep running.
+            // Чистый EOF: объявляем его и даём другому направлению работать дальше.
             s.sentEof.set(true);
             sender.accept(Frames.eof(s.id));
             finishIfDone(s);
@@ -370,9 +371,9 @@ public final class Mux {
     }
 
     /**
-     * Wait for {@code n} bytes of credit. Polls so that a stream killed while its sender
-     * is blocked here does not linger: closing the socket unblocks a read, but nothing
-     * would otherwise unblock a wait for credit.
+     * Ждёт кредит на {@code n} байт. Опрашивает в цикле, чтобы поток, убитый пока его отправитель
+     * заблокирован здесь, не завис: закрытие сокета разблокирует чтение, но ожидание кредита
+     * иначе не разблокировало бы ничто.
      */
     private boolean acquireWindow(Stream s, int n) throws InterruptedException {
         while (!s.dead.get() && !shuttingDown) {
@@ -383,7 +384,7 @@ public final class Mux {
         return false;
     }
 
-    /** Both directions saw a clean EOF: the stream is finished, no CLOSE needed. */
+    /** Оба направления увидели чистый EOF: поток закончен, CLOSE не нужен. */
     private void finishIfDone(Stream s) {
         if (s.sentEof.get() && s.recvEof.get() && streams.remove(s.id, s)) {
             s.dead.set(true);
@@ -392,7 +393,7 @@ public final class Mux {
         }
     }
 
-    /** Something broke on our side: tell the peer and tear the stream down. */
+    /** На нашей стороне что-то сломалось: говорим об этом другой стороне и сносим поток. */
     private void fail(Stream s) {
         if (streams.remove(s.id, s)) {
             kill(s);
@@ -402,9 +403,9 @@ public final class Mux {
     }
 
     /**
-     * One line per finished stream, at DEBUG: where it went, how long it lived and how much
-     * it carried each way. This is the view the logs otherwise lack entirely &mdash; without
-     * it a working tunnel and a tunnel quietly dropping streams look identical.
+     * По строке на каждый закончившийся поток, на уровне DEBUG: куда он шёл, сколько прожил и
+     * сколько пронёс в каждую сторону. Этого в логах иначе нет совсем — без такой строки
+     * работающий туннель и туннель, который тихо роняет потоки, выглядят одинаково.
      */
     private void logClosed(Stream s, String how) {
         if (s.logged.compareAndSet(false, true) && log.isDebugEnabled()) {
@@ -413,16 +414,16 @@ public final class Mux {
         }
     }
 
-    /** Stream ids read unsigned; see {@link StreamInfo#label()}. */
+    /** Id потоков читаются беззнаковыми; см. {@link StreamInfo#label()}. */
     private static String label(int streamId) {
         return Integer.toUnsignedString(streamId);
     }
 
     /**
-     * Byte counts a human can read at a glance. Formatted with {@link Locale#ROOT} on
-     * purpose: the default locale would put a comma in the decimals on a Russian machine and
-     * a dot in a container, so the same traffic would read differently depending on where
-     * the process happens to run.
+     * Счётчики байт, которые человек прочитает с одного взгляда. Форматируются с
+     * {@link Locale#ROOT} намеренно: локаль по умолчанию поставила бы в дробной части запятую на
+     * русской машине и точку в контейнере, и один и тот же трафик читался бы по-разному
+     * в зависимости от того, где процесс запустили.
      */
     public static String bytes(long n) {
         if (n < 1024) {
@@ -459,7 +460,7 @@ public final class Mux {
                 s.shutdownOutput();
             }
         } catch (IOException ignored) {
-            // the peer may already be gone; the read side decides the stream's fate
+            // другой стороны может уже не быть; судьбу потока решает читающая сторона
         }
     }
 }

@@ -21,8 +21,8 @@ class AddressPolicyTest {
 
     @Test
     void blankEntriesAreIgnoredRatherThanMatchingEverything() {
-        // A stray empty line in configuration must not silently open the server: an empty
-        // pattern would match every address.
+        // Случайная пустая строка в конфиге не должна молча открывать сервер наружу: пустой
+        // шаблон совпал бы с любым адресом.
         AddressPolicy p = new AddressPolicy(Arrays.asList("", "   ", "^127\\.0\\.0\\.1:3129$"));
         assertFalse(p.unrestricted());
         assertTrue(p.allowsDial("127.0.0.1", 3129));
@@ -38,7 +38,7 @@ class AddressPolicyTest {
         assertFalse(p.allowsDial("127.0.0.1", 22));
         assertFalse(p.allowsDial("169.254.169.254", 80), "cloud metadata must not be reachable");
         assertFalse(p.allowsReverse("0.0.0.0", 2222));
-        // A forward pattern must not be usable to open a reverse listener, or vice versa.
+        // Шаблоном для проброса нельзя открыть обратный слушатель, и наоборот.
         assertFalse(p.allowsReverse("127.0.0.1", 3129));
     }
 

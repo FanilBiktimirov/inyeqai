@@ -21,20 +21,21 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import com.laptopkit.tunnel.common.ForwardSpec;
 
 /**
- * Keepalive has to work in both directions, and the only honest way to check it is to let
- * an idle tunnel sit for longer than both timeouts and then use it.
+ * Keepalive обязан работать в обе стороны, и единственный честный способ это проверить —
+ * оставить простаивающий туннель лежать дольше обоих таймаутов, а потом им воспользоваться.
  *
- * <p>With these settings the client tears the tunnel down after 2s without a pong and the
- * server closes a session after 3s without one. A tunnel that still carries bytes after
- * several idle seconds therefore proves two things at once: the container answers the
- * client's pings, and the JDK client answers the server's. Either half missing would show
- * up here as a dropped tunnel rather than a silent regression in production.
+ * <p>С этими настройками клиент рвёт туннель через 2 с без pong, а сервер закрывает сессию
+ * через 3 с без него. Поэтому туннель, который всё ещё несёт байты после нескольких секунд
+ * простоя, доказывает сразу две вещи: контейнер отвечает на ping клиента, а JDK-клиент — на
+ * ping сервера. Пропажа любой из половин вылезла бы здесь оборванным туннелем, а не тихой
+ * регрессией в продакшене.
  *
- * <p>Both carriers are checked, because they prove this in different ways. A WebSocket has
- * ping and pong frames of its own; the HTTP transport has to carry its keepalive as ordinary
- * frames and answer them in its own transport layer, on both ends. An idle HTTP tunnel that
- * survives here is the evidence that it does, and that the server's reaper is not quietly
- * closing live HTTP sessions for want of a pong it never recognised.
+ * <p>Проверяются оба транспорта, потому что доказывают они это по-разному. У WebSocket есть
+ * свои собственные кадры ping и pong; HTTP-транспорт вынужден нести свой keepalive обычными
+ * кадрами и отвечать на них в своём транспортном слое, на обоих концах. Простаивающий
+ * HTTP-туннель, который здесь выжил, и есть доказательство, что так и происходит, — и что
+ * отстрел замолчавших сессий на сервере не уносит тихо живые HTTP-сессии из-за pong, которого
+ * сервер так и не распознал.
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -56,7 +57,7 @@ class TunnelKeepaliveTest {
             Thread t = runAsync(conn);
             try {
                 assertEquals("before", roundTrip(localPort, "before"));
-                // Six idle seconds: twice the server's pong timeout, three times the client's.
+                // Шесть секунд простоя: вдвое дольше таймаута сервера на pong, втрое — клиентского.
                 Thread.sleep(6_000);
                 assertEquals("after", roundTrip(localPort, "after"),
                         "the tunnel should still be up after idling past both pong timeouts");
@@ -67,7 +68,7 @@ class TunnelKeepaliveTest {
         }
     }
 
-    /** chisel documents {@code 0s} as "no keepalive"; it must not take the client down. */
+    /** chisel документирует {@code 0s} как «без keepalive»; это не должно ронять клиент. */
     @ParameterizedTest
     @EnumSource(Transport.class)
     @Timeout(60)

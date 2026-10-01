@@ -23,15 +23,15 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import com.laptopkit.tunnel.common.ForwardSpec;
 
 /**
- * Resumption is only worth having if a cut downstream costs nothing but a round trip. These tests
- * put a proxy in the way that severs the tunnel's downstream response every so often and then ask
- * for the one thing that cannot be faked: every byte back, in order.
+ * Восстановление сессии имеет смысл только если оборванный поток вниз стоит не дороже одного
+ * круга туда-обратно. Эти тесты ставят на пути прокси, который время от времени обрывает ответ
+ * потока вниз, и требуют того единственного, что не подделать: все байты обратно и по порядку.
  *
- * <p>A transfer larger than the retransmit buffer is the interesting case, because it means frames
- * really are being confirmed and dropped as it goes rather than simply all being kept. And the
- * assertion on the echoed bytes is what makes the test meaningful: a resumption that skipped a
- * frame, or replayed one twice, would corrupt the stream in a way nothing in the tunnel reports
- * &mdash; it would simply hand back different bytes.
+ * <p>Интересен случай передачи больше буфера переотправки — он означает, что кадры и правда
+ * подтверждаются и выбрасываются по ходу дела, а не просто все хранятся. А проверка самих
+ * вернувшихся байт — то, что придаёт тесту смысл: восстановление, пропустившее кадр или
+ * повторившее его дважды, испортит поток так, что в туннеле об этом ничто не сообщит — он просто
+ * отдаст другие байты.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class HttpResumeTest {
@@ -47,7 +47,7 @@ class HttpResumeTest {
         new Random(4321).nextBytes(payload);
 
         try (EchoServer echo = EchoServer.echoing();
-             // Cut every 256 KB: a 4 MB echo has to survive more than a dozen of them.
+             // Обрыв каждые 256 КБ: 4-мегабайтное эхо обязано пережить больше десятка таких.
              DownstreamCappingProxy proxy =
                      DownstreamCappingProxy.inFrontOf(serverPort, 256 * 1024)) {
 
@@ -66,7 +66,7 @@ class HttpResumeTest {
                         out.flush();
                         sock.shutdownOutput();
                     } catch (IOException e) {
-                        // the read side reports the real failure
+                        // настоящую ошибку сообщит сторона чтения
                     }
                 }, "bulk-writer");
                 writer.setDaemon(true);
@@ -86,9 +86,9 @@ class HttpResumeTest {
     }
 
     /**
-     * The streams themselves must not notice. A connection opened before a cut has to still be
-     * usable after it: that is the difference between resuming a session and rebuilding one,
-     * since a rebuilt tunnel drops every stream it was carrying.
+     * Сами потоки не должны ничего заметить. Соединение, открытое до обрыва, обязано остаться
+     * годным и после: в этом и разница между восстановлением сессии и её пересборкой, ведь
+     * пересобранный туннель теряет все потоки, которые несла предыдущая сессия.
      */
     @Test
     @Timeout(120)
@@ -106,7 +106,8 @@ class HttpResumeTest {
                 sock.setSoTimeout(60_000);
                 assertEquals("before-the-cut", exchange(sock, "before-the-cut"));
 
-                // Push enough through this same connection to trip the cap, then keep using it.
+                // Прогоняем по тому же соединению достаточно, чтобы сработало ограничение,
+                // а потом продолжаем им пользоваться.
                 byte[] filler = new byte[96 * 1024];
                 new Random(7).nextBytes(filler);
                 sock.getOutputStream().write(filler);
@@ -127,7 +128,7 @@ class HttpResumeTest {
             try {
                 conn.run();
             } catch (Exception ignored) {
-                // run() ends when the connection is stopped
+                // run() заканчивается, когда соединение останавливают
             }
         });
         t.setDaemon(true);

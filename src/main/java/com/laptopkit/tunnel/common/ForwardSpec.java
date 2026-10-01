@@ -4,22 +4,22 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * A port-forward rule parsed from the command line, in chisel's syntax.
+ * Правило проброса порта, разобранное из командной строки, в синтаксисе chisel.
  *
  * <ul>
- *   <li>Local  {@code [bind:]port:dsthost:dstport} &mdash; the client listens, the
- *       server dials the destination. {@code reverse == false}; {@code bindHost:bindPort}
- *       is the client-side listener, {@code dstHost:dstPort} the server-side target.</li>
- *   <li>Reverse {@code R:[bind:]port:dsthost:dstport} &mdash; the server listens, the
- *       client dials the destination. {@code reverse == true}; {@code bindHost:bindPort}
- *       is the server-side listener, {@code dstHost:dstPort} the client-side target.</li>
+ *   <li>Прямой   {@code [bind:]port:dsthost:dstport} — слушает клиент, а до адресата
+ *       дозванивается сервер. {@code reverse == false}; {@code bindHost:bindPort} —
+ *       слушатель на стороне клиента, {@code dstHost:dstPort} — цель на стороне сервера.</li>
+ *   <li>Обратный {@code R:[bind:]port:dsthost:dstport} — слушает сервер, а до адресата
+ *       дозванивается клиент. {@code reverse == true}; {@code bindHost:bindPort} —
+ *       слушатель на стороне сервера, {@code dstHost:dstPort} — цель на стороне клиента.</li>
  * </ul>
  *
- * <p>Shorter forms fill in from the back, as chisel does: {@code 3000} is
- * {@code 3000:127.0.0.1:3000} and {@code example.com:3000} is
- * {@code 3000:example.com:3000}. IPv6 literals are written in brackets
- * ({@code [::1]:3000:[::1]:80}); the brackets are stripped from the stored host so it can
- * be handed straight to {@code InetSocketAddress}.
+ * <p>Сокращённые формы достраиваются с конца, как в chisel: {@code 3000} — это
+ * {@code 3000:127.0.0.1:3000}, а {@code example.com:3000} — это
+ * {@code 3000:example.com:3000}. IPv6-литералы пишутся в квадратных скобках
+ * ({@code [::1]:3000:[::1]:80}); из сохранённого хоста скобки срезаются, чтобы его можно было
+ * сразу отдать в {@code InetSocketAddress}.
  */
 public record ForwardSpec(boolean reverse, String bindHost, int bindPort, String dstHost, int dstPort) {
 
@@ -35,17 +35,17 @@ public record ForwardSpec(boolean reverse, String bindHost, int bindPort, String
         List<String> p = split(s, raw);
         String defaultBind = reverse ? "0.0.0.0" : "127.0.0.1";
         return switch (p.size()) {
-            // 3000                 -> listen 3000, dial 127.0.0.1:3000
+            // 3000                 -> слушать 3000, дозвон до 127.0.0.1:3000
             case 1 -> {
                 int port = port(p.get(0), raw);
                 yield new ForwardSpec(reverse, defaultBind, port, DEFAULT_DST_HOST, port);
             }
-            // example.com:3000     -> listen 3000, dial example.com:3000
+            // example.com:3000     -> слушать 3000, дозвон до example.com:3000
             case 2 -> {
                 int port = port(p.get(1), raw);
                 yield new ForwardSpec(reverse, defaultBind, port, host(p.get(0), raw), port);
             }
-            // 3128:127.0.0.1:3129  -> listen 3128, dial 127.0.0.1:3129
+            // 3128:127.0.0.1:3129  -> слушать 3128, дозвон до 127.0.0.1:3129
             case 3 -> new ForwardSpec(reverse, defaultBind, port(p.get(0), raw),
                     host(p.get(1), raw), port(p.get(2), raw));
             // 0.0.0.0:3128:host:3129
@@ -63,7 +63,7 @@ public record ForwardSpec(boolean reverse, String bindHost, int bindPort, String
         return new Reverse(bindHost, bindPort, dstHost, dstPort);
     }
 
-    /** Split on ':' while keeping bracketed IPv6 literals in one piece. */
+    /** Разбивает по ':', не разрывая IPv6-литералы в квадратных скобках. */
     private static List<String> split(String s, String raw) {
         List<String> out = new ArrayList<>(4);
         StringBuilder cur = new StringBuilder();

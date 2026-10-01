@@ -20,14 +20,14 @@ import com.laptopkit.tunnel.common.ForwardSpec;
 import com.laptopkit.tunnel.common.Reverse;
 
 /**
- * The allow list is the difference between a tunnel and an open door into whatever the
- * server can reach. Here it permits exactly one address that no test actually uses, so
- * every real destination must be refused.
+ * Список разрешённых адресов — это разница между туннелем и открытой дверью во всё, куда сервер
+ * может достать. Здесь он разрешает ровно один адрес, которым ни один тест не пользуется, так
+ * что любое настоящее направление обязано получить отказ.
  *
- * <p>Checked on both carriers, because a transport that bypassed the policy would be a far
- * worse bug than one that failed to carry bytes: the second kind is obvious, the first kind is
- * silent. The HTTP fallback reaches the same session handler and so the same policy, and this
- * is what holds it to that.
+ * <p>Проверяется на обоих транспортах, потому что транспорт, обходящий политику, — баг куда хуже
+ * того, который не донёс байты: второй заметен сразу, первый молчит. Запасной HTTP-транспорт
+ * попадает в тот же обработчик сессии, а значит и в ту же политику, и именно это его к ней и
+ * привязывает.
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -51,8 +51,8 @@ class TunnelAllowListTest {
                 sock.setSoTimeout(20_000);
                 sock.getOutputStream().write("knock\n".getBytes());
                 sock.getOutputStream().flush();
-                // The listener is local, so connecting always works; the refusal shows up as
-                // the tunnelled stream being closed with nothing echoed back.
+                // Слушатель локальный, так что подключиться получается всегда; отказ проявляется
+                // тем, что туннельный поток закрывают и ничего не возвращают эхом.
                 assertEquals(-1, sock.getInputStream().read(),
                         "a denied destination must end the stream, not relay data");
             } finally {
@@ -73,8 +73,8 @@ class TunnelAllowListTest {
                     new ClientConnection(url(), null, 25, List.of(), List.of(reverse), transport);
             Thread t = runAsync(conn);
             try {
-                // Give the server time to have acted on the CONFIG, then confirm the port
-                // stayed shut rather than being briefly open.
+                // Даём серверу время отработать CONFIG, а потом убеждаемся, что порт так и
+                // остался закрыт, а не побыл недолго открытым.
                 Thread.sleep(2_000);
                 assertThrows(ConnectException.class, () -> new Socket("127.0.0.1", serverListen).close(),
                         "the server must not bind a reverse port the allow list rejects");

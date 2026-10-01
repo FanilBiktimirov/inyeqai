@@ -9,8 +9,8 @@ import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.server.HandshakeInterceptor;
 
 /**
- * Rejects the WebSocket upgrade with 401 unless the client presents the configured token in
- * {@code X-Tunnel-Auth}. An empty configured token disables the check.
+ * Отклоняет WebSocket-апгрейд с 401, если клиент не предъявил настроенный токен в
+ * {@code X-Tunnel-Auth}. Пустой токен в настройках отключает проверку.
  */
 public class AuthHandshakeInterceptor implements HandshakeInterceptor {
 
@@ -33,6 +33,6 @@ public class AuthHandshakeInterceptor implements HandshakeInterceptor {
     @Override
     public void afterHandshake(ServerHttpRequest request, ServerHttpResponse response,
                                WebSocketHandler wsHandler, Exception exception) {
-        // nothing
+        // ничего
     }
 }

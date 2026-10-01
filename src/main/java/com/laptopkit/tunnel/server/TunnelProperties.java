@@ -6,37 +6,41 @@ import java.util.List;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-/** Server knobs, bound from {@code tunnel.*} (properties, env, or CLI mapping). */
+/** Серверные настройки, привязанные к {@code tunnel.*} (свойства, env или маппинг из CLI). */
 @ConfigurationProperties(prefix = "tunnel")
 public class TunnelProperties {
 
-    /** Shared secret a client must send as {@code X-Tunnel-Auth}. Empty = open (dev only). */
+    /**
+     * Общий секрет, который клиент должен прислать в {@code X-Tunnel-Auth}. Пусто = открыто
+     * (только для dev).
+     */
     private String auth = "";
 
-    /** Path the WebSocket endpoint is mounted at. */
+    /** Путь, на который смонтирован WebSocket-эндпойнт. */
     private String path = "/tunnel";
 
     /**
-     * Destinations clients may reach, as regular expressions matched against
-     * {@code host:port} for forward streams and {@code R:bind:port} for reverse listeners.
-     * Empty means no restriction, which lets any authenticated client dial anything the
-     * server can reach. Patterns are not anchored implicitly &mdash; write {@code ^...$}.
+     * Куда клиентам можно достучаться — регулярные выражения, которые сопоставляются с
+     * {@code host:port} для прямых потоков и с {@code R:bind:port} для обратных слушателей.
+     * Пусто — значит без ограничений, и тогда любой прошедший аутентификацию клиент может
+     * дозвониться куда угодно, докуда достаёт сервер. Шаблоны неявно не привязываются к
+     * границам строки — пишите {@code ^...$}.
      */
     private List<String> allow = new ArrayList<>();
 
     /**
-     * Serve {@code GET /status}, the live view of sessions and streams. It sits behind the
-     * same token as the tunnel; set this to false to remove the endpoint entirely.
+     * Отдавать {@code GET /status} — живой срез сессий и потоков. Закрыт тем же токеном, что
+     * и туннель; поставьте false, чтобы убрать эндпойнт совсем.
      */
     private boolean status = true;
 
-    /** How often to ping each client. Zero disables server-side keepalive and reaping. */
+    /** Как часто пинговать каждого клиента. Ноль выключает серверный keepalive и отстрел. */
     private Duration keepalive = Duration.ofSeconds(25);
 
     /**
-     * Silence after which a client is considered gone and its session closed. This is what
-     * frees the reverse listeners a dead client still holds, so a reconnecting client can
-     * bind its ports again.
+     * Сколько молчания нужно, чтобы считать клиента ушедшим и закрыть его сессию. Именно это
+     * освобождает обратные слушатели, которые всё ещё держит мёртвый клиент, — чтобы
+     * переподключающийся клиент снова смог занять свои порты.
      */
     private Duration pongTimeout = Duration.ofSeconds(75);
 

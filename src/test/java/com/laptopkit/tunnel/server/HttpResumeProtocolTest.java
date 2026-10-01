@@ -31,13 +31,14 @@ import com.laptopkit.tunnel.common.Framing;
 import com.laptopkit.tunnel.common.Reverse;
 
 /**
- * The resumption rules, driven by hand over HTTP so each one can be put wrong on purpose.
+ * Правила восстановления сессии, прогоняемые вручную поверх HTTP, чтобы каждое можно было
+ * нарушить намеренно.
  *
- * <p>These are the cases where getting it wrong is silent. A retried batch applied twice doubles
- * bytes inside a stream; a skipped batch loses them; a resume from a point the server can no
- * longer produce leaves a hole. None of that surfaces as an error anywhere in the tunnel &mdash;
- * the bytes simply come out wrong at the far end, which is why every one of these has to be
- * refused loudly here rather than tolerated.
+ * <p>Это те случаи, где ошибка проходит незаметно. Повторённая пачка, применённая дважды,
+ * удваивает байты внутри потока; пропущенная пачка их теряет; восстановление с точки, которую
+ * сервер уже не может воспроизвести, оставляет дырку. Ничего из этого не всплывает в туннеле
+ * как ошибка — байты просто выходят на дальнем конце неправильными, поэтому каждый такой
+ * случай обязан получить здесь громкий отказ, а не молчаливое прощение.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class HttpResumeProtocolTest {
@@ -63,8 +64,8 @@ class HttpResumeProtocolTest {
         sink = new ByteSink();
         String id = connect();
 
-        // One stream carrying five bytes, then the very same request again, as a client that
-        // never saw our answer would send it.
+        // Один поток с пятью байтами, а затем тот же самый запрос ещё раз — так его пришлёт
+        // клиент, который не увидел нашего ответа.
         byte[] batch = frames(
                 Frames.open(1, "127.0.0.1", sink.port()),
                 Frames.data(1, "hello".getBytes(StandardCharsets.UTF_8), 0, 5));
@@ -73,9 +74,14 @@ class HttpResumeProtocolTest {
 
         assertEquals(204, postBatch(id, 1, batch).statusCode(),
                 "a retry must be answered, since the client could not tell our answer was lost");
-        Thread.sleep(500);
-        assertTrue(status().contains("from clients 5 B"),
-                "the retry must not be applied a second time:\n" + status());
+
+        // Дальше идёт настоящая вторая пачка — ещё три байта. Ждать ровно «8 B» надёжнее, чем
+        // подождать полсекунды и убедиться, что счётчик не вырос: применённый повтор дал бы 13,
+        // и восьмёрки не случилось бы никогда. Проверка через паузу зеленела бы ложно каждый
+        // раз, когда применение повтора просто задержалось дольше паузы.
+        assertEquals(204, postBatch(id, 2,
+                frames(Frames.data(1, "xyz".getBytes(StandardCharsets.UTF_8), 0, 3))).statusCode());
+        awaitStatusContains("from clients 8 B");
     }
 
     @Test
@@ -85,8 +91,8 @@ class HttpResumeProtocolTest {
         String id = connect();
         assertEquals(204, postBatch(id, 1, frames(Frames.ping())).statusCode());
 
-        // Batch 2 never arrives. Carrying on from 3 would mean silently dropping whatever was
-        // in it, so the session has to end instead.
+        // Пачка 2 не доезжает никогда. Продолжить с третьей — значит молча потерять всё, что
+        // в ней было, поэтому вместо этого сессия обязана закончиться.
         HttpResponse<String> res = postBatch(id, 3, frames(Frames.ping()));
         assertEquals(410, res.statusCode(), res.body());
         awaitSessionGone(id);
@@ -99,8 +105,8 @@ class HttpResumeProtocolTest {
         try (InputStream down = attach(id, 0)) {
             assertNotNull(Framing.readSequenced(Framing.reader(down)), "expected the greeting");
         }
-        // Nowhere near that many frames exist; a client claiming otherwise has lost track of
-        // where it is, and anything we sent it from here would be guesswork.
+        // Столько кадров и близко нет; клиент, который утверждает обратное, потерял счёт тому,
+        // где он находится, и всё, что мы отправим ему с этого места, будет гаданием.
         assertEquals(410, attachStatus(id, 9_999));
         awaitSessionGone(id);
     }
@@ -117,11 +123,11 @@ class HttpResumeProtocolTest {
             postBatch(id, 1, frames(Frames.config(
                     List.of(new Reverse("127.0.0.1", reversePort, "127.0.0.1", 9)))));
             awaitBound(reversePort);
-        } // the response ends here, exactly as a capped gateway would end it
+        } // ответ заканчивается здесь — ровно так, как его оборвал бы шлюз с лимитом
 
-        // A whole second with no downstream at all, then back for the rest. The listener the
-        // session was holding has to still be there: resuming a session rather than rebuilding
-        // one is the difference between keeping its streams and dropping them.
+        // Целую секунду потока вниз нет вообще, потом возвращаемся за остатком. Слушатель,
+        // который держала сессия, обязан остаться на месте: продолжить сессию, а не собрать
+        // её заново — это разница между сохранением её потоков и их потерей.
         Thread.sleep(1_000);
         assertTrue(portIsBound(reversePort),
                 "the reverse listener should outlive the response that asked for it");
@@ -132,7 +138,7 @@ class HttpResumeProtocolTest {
         }
     }
 
-    /** A destination that accepts connections and reads whatever arrives. */
+    /** Назначение, которое принимает соединения и вычитывает всё, что приходит. */
     private static final class ByteSink implements AutoCloseable {
         private final ServerSocket listener;
 
@@ -147,7 +153,7 @@ class HttpResumeProtocolTest {
                             try (Socket open = s) {
                                 byte[] buf = new byte[4096];
                                 while (open.getInputStream().read(buf) != -1) {
-                                    // the point is only that the bytes are taken
+                                    // смысл только в том, чтобы байты забирались
                                 }
                             } catch (IOException ignored) {
                             }
@@ -221,9 +227,9 @@ class HttpResumeProtocolTest {
     }
 
     /**
-     * Wait for one session to disappear from {@code /status}. Named per session on purpose: this
-     * context is shared with the other tests here, so asserting that no sessions at all remain
-     * would be asserting something about them rather than about this one.
+     * Ждёт, пока одна конкретная сессия исчезнет из {@code /status}. Привязка к id сессии здесь
+     * намеренная: контекст общий с остальными тестами этого класса, поэтому проверка «не осталось
+     * ни одной сессии» проверяла бы их, а не этот тест.
      */
     private void awaitSessionGone(String id) throws Exception {
         long deadline = System.currentTimeMillis() + 15_000;

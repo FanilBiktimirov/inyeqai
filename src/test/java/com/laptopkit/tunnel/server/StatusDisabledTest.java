@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
-/** {@code tunnel.status=false} has to remove the endpoint, not just hide its contents. */
+/** {@code tunnel.status=false} должен убрать эндпойнт, а не просто спрятать его содержимое. */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {"tunnel.auth=tunnel:off", "tunnel.status=false"})

@@ -34,15 +34,15 @@ import com.laptopkit.tunnel.common.Mux;
 import com.laptopkit.tunnel.common.Reverse;
 
 /**
- * The server end of the tunnel. One {@link Session} per WebSocket connection holds a
- * {@link Mux} and any reverse-forward listeners that connection opened. Sends are
- * serialized on a per-session lock, since a {@code WebSocketSession} may not be written
- * concurrently.
+ * Серверный конец туннеля. Одна {@link Session} на каждое WebSocket-подключение держит
+ * {@link Mux} и все обратные слушатели, которые это подключение открыло. Отправки
+ * сериализуются на локе своей сессии, потому что в {@code WebSocketSession} нельзя писать
+ * параллельно.
  *
- * <p>The server pings its clients and closes sessions whose pongs stop arriving. That is
- * not cosmetic: a client that vanishes without a TCP close (suspended laptop, expired NAT
- * entry) would otherwise keep its reverse listeners bound forever, and the same client
- * reconnecting could never rebind those ports.
+ * <p>Сервер пингует своих клиентов и закрывает сессии, от которых перестали приходить
+ * pong'и. Это не косметика: клиент, исчезнувший без TCP-закрытия (ноутбук ушёл в сон,
+ * истекла запись в NAT), иначе навсегда удерживал бы свои обратные слушатели, и тот же
+ * клиент, переподключившись, никогда не смог бы занять эти порты заново.
  */
 @Component
 public class TunnelWebSocketHandler extends BinaryWebSocketHandler {
@@ -54,7 +54,7 @@ public class TunnelWebSocketHandler extends BinaryWebSocketHandler {
     private final TunnelProperties props;
     private final AddressPolicy policy;
     private final ConcurrentHashMap<String, Session> sessions = new ConcurrentHashMap<>();
-    /** Which session currently holds each reverse port, so a stale holder can be evicted. */
+    /** Какая сессия держит каждый обратный порт — чтобы можно было выселить залипшего держателя. */
     private final ConcurrentHashMap<Integer, Session> reversePorts = new ConcurrentHashMap<>();
     private final ScheduledExecutorService keepalive;
 
@@ -86,7 +86,7 @@ public class TunnelWebSocketHandler extends BinaryWebSocketHandler {
         }
     }
 
-    /** Per-connection state. */
+    /** Состояние одного подключения. */
     private final class Session {
         private final WebSocketSession ws;
         private final ReentrantLock sendLock = new ReentrantLock();
@@ -106,10 +106,11 @@ public class TunnelWebSocketHandler extends BinaryWebSocketHandler {
             for (ServerSocket ss : listeners) {
                 ports.add(ss.getLocalPort());
             }
-            // Only the HTTP carrier can be resumed, so only it has anything to say here. Asking
-            // it directly beats inventing a general notion of carrier state for a question one
-            // carrier cannot answer at all, and a tunnel being resumed every few seconds is
-            // exactly the kind of quiet degradation /status exists to show.
+            // Восстановить можно только HTTP-транспорт, так что и сказать тут есть что только
+            // ему. Спросить его напрямую лучше, чем выдумывать общее понятие состояния
+            // транспорта для вопроса, на который один из транспортов вообще не отвечает, а
+            // туннель, восстанавливающийся каждые пару секунд, — ровно та тихая деградация,
+            // ради которой /status и существует.
             long resumes = 0;
             int holding = 0;
             if (ws instanceof HttpCarrierSession carrier) {
@@ -145,10 +146,10 @@ public class TunnelWebSocketHandler extends BinaryWebSocketHandler {
         }
 
         /**
-         * Ping without waiting for the send lock. A send already in progress means this
-         * client is being written to right now, so skipping one ping costs nothing; blocking
-         * here would be costly, because one client that stopped reading would hold up the
-         * single keepalive thread and with it the pinging and reaping of every other session.
+         * Пинг без ожидания лока на отправку. Если отправка уже идёт, значит в этого клиента
+         * прямо сейчас пишут, и пропустить один пинг ничего не стоит; а вот заблокироваться
+         * здесь стоило бы дорого: один клиент, переставший читать, задержал бы единственный
+         * keepalive-поток, а с ним — пинги и отстрел всех остальных сессий.
          */
         void ping() {
             boolean held = false;
@@ -185,7 +186,7 @@ public class TunnelWebSocketHandler extends BinaryWebSocketHandler {
         }
     }
 
-    /** Live view of every session, newest keepalive reply included. For {@code GET /status}. */
+    /** Живой срез всех сессий, со свежайшим ответом на keepalive. Для {@code GET /status}. */
     public List<SessionSnapshot> snapshot() {
         List<SessionSnapshot> out = new ArrayList<>();
         for (Session s : sessions.values()) {
@@ -256,7 +257,7 @@ public class TunnelWebSocketHandler extends BinaryWebSocketHandler {
         log.info("tunnel client disconnected: {} ({})", session.getId(), status);
     }
 
-    /** Ping every session, and close the ones that stopped answering. */
+    /** Пингануть каждую сессию и закрыть те, которые перестали отвечать. */
     private void pingAndReap() {
         long timeoutNanos = props.getPongTimeout().toNanos();
         for (Session ctx : sessions.values()) {
@@ -264,8 +265,8 @@ public class TunnelWebSocketHandler extends BinaryWebSocketHandler {
                 if (ctx.staleFor(timeoutNanos)) {
                     log.warn("no pong from {} for {}s, closing the session",
                             ctx.ws.getId(), props.getPongTimeout().toSeconds());
-                    // Drop the listeners now rather than waiting for the close callback, so
-                    // a client reconnecting immediately finds its ports free.
+                    // Слушатели сбрасываем сразу, не дожидаясь колбэка о закрытии, — чтобы
+                    // клиент, переподключившийся тут же, нашёл свои порты свободными.
                     ctx.closeListeners();
                     closeQuiet(ctx.ws, CloseStatus.SESSION_NOT_RELIABLE);
                 } else {
@@ -311,9 +312,10 @@ public class TunnelWebSocketHandler extends BinaryWebSocketHandler {
     }
 
     /**
-     * Free a reverse port still held by a session that has missed a keepalive round. This
-     * is the common case after a client's host suspends: the old session is dead but its
-     * socket has not failed yet, and without this the reconnecting client cannot rebind.
+     * Освободить обратный порт, который всё ещё держит сессия, пропустившая раунд keepalive.
+     * Это обычный случай после того, как хост клиента ушёл в сон: старая сессия мертва, но её
+     * сокет ещё не отвалился, и без этого переподключающийся клиент не сможет занять порт
+     * заново.
      */
     private void evictStaleHolder(Session incoming, int port) {
         Session holder = reversePorts.get(port);
@@ -322,7 +324,7 @@ public class TunnelWebSocketHandler extends BinaryWebSocketHandler {
         }
         long graceNanos = props.getKeepalive().toNanos();
         if (graceNanos <= 0 || !holder.staleFor(graceNanos)) {
-            return; // a live client owns this port; let the bind fail and say so
+            return; // порт принадлежит живому клиенту; пусть bind упадёт и об этом скажет
         }
         log.warn("port {} was held by unresponsive session {}, closing it for {}",
                 port, holder.ws.getId(), incoming.ws.getId());
@@ -336,11 +338,11 @@ public class TunnelWebSocketHandler extends BinaryWebSocketHandler {
             try {
                 sock = ss.accept();
             } catch (Exception e) {
-                break; // listener closed with the session
+                break; // слушатель закрылся вместе с сессией
             }
             int id = ctx.mux.nextId();
-            // Register first so a CLOSE answering this OPEN cannot arrive for an unknown
-            // stream, then send OPEN before any DATA can overtake it.
+            // Сначала регистрируем, чтобы CLOSE в ответ на этот OPEN не пришёл для неизвестного
+            // потока, и только потом отправляем OPEN — до того, как его обгонит любой DATA.
             ctx.mux.prepareOutbound(id, sock, r.clientHost() + ":" + r.clientPort());
             ctx.send(Frames.open(id, r.clientHost(), r.clientPort()));
             ctx.mux.startOutbound(id);

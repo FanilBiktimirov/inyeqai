@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import com.laptopkit.tunnel.common.Mux;
 
-/** The status view exists to be read at a glance, so its two formatters are worth pinning. */
+/** Статус читают мельком, поэтому оба его форматтера стоит зафиксировать тестом. */
 class HumanFormatTest {
 
     @Test

@@ -1,16 +1,16 @@
 package com.laptopkit.tunnel.client;
 
 /**
- * How the client carries frames to the server. The tunnel protocol is the same either way;
- * only the thing underneath it differs.
+ * Чем клиент довозит кадры до сервера. Протокол туннеля в любом случае один и тот же;
+ * отличается только то, что лежит под ним.
  */
 public enum Transport {
 
-    /** One WebSocket, the normal choice. */
+    /** Один WebSocket, обычный выбор. */
     WEBSOCKET("websocket"),
     /**
-     * Plain HTTP: a streaming response down, batched POSTs up. For networks where the
-     * WebSocket upgrade does not survive the trip.
+     * Обычный HTTP: потоковый ответ вниз, пачки POST вверх. Для сетей, где апгрейд до
+     * WebSocket не доживает до другого конца.
      */
     HTTP("http");
 
@@ -20,12 +20,12 @@ public enum Transport {
         this.label = label;
     }
 
-    /** What logs and the health endpoint call it. */
+    /** Как это называют логи и health-эндпойнт. */
     String label() {
         return label;
     }
 
-    /** The other one, for {@code --transport auto} to try next. */
+    /** Другой из двух — его {@code --transport auto} попробует следующим. */
     Transport other() {
         return this == WEBSOCKET ? HTTP : WEBSOCKET;
     }

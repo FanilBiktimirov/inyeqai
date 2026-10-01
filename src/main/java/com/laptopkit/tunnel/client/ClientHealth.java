@@ -23,38 +23,38 @@ import com.laptopkit.tunnel.common.Reverse;
 import com.laptopkit.tunnel.common.StreamInfo;
 
 /**
- * A health endpoint for the client, on the JDK's own HTTP server so the client keeps its
- * "no dependencies beyond the JDK" shape.
+ * Health-эндпойнт клиента — на HTTP-сервере из самой JDK, чтобы клиент сохранил свою форму
+ * «никаких зависимостей кроме JDK».
  *
- * <p>It deliberately does not answer "the process is running", which is all an ordinary
- * liveness probe can tell and is worth nothing here: a tunnel client whose peer vanished
- * without a TCP close keeps its socket, keeps its listeners open, and keeps accepting
- * connections it can no longer carry. The question that matters is whether the far end is
- * still answering, and the honest evidence for that is the age of the last keepalive reply.
+ * <p>Он намеренно не отвечает на вопрос «процесс жив» — это всё, что может сказать обычная
+ * liveness-проба, и здесь это не стоит ничего: клиент туннеля, чей пир исчез без TCP-close,
+ * держит свой сокет, держит открытыми слушатели и продолжает принимать соединения, которые уже
+ * не может довезти. Важно другое: отвечает ли ещё дальняя сторона, — и честное доказательство
+ * этому — давность последнего ответа на keepalive.
  *
  * <pre>
- *   GET /healthz   200 when the tunnel is usable, 503 when it is not
- *   GET /status    the same verdict with the numbers behind it, as plain text
+ *   GET /healthz   200, когда туннель пригоден, 503, когда нет
+ *   GET /status    тот же вердикт вместе с числами за ним, обычным текстом
  * </pre>
  *
- * <p>With {@code --keepalive 0s} there are no pongs, so no such evidence exists. The
- * endpoint then reports {@code unknown} and still answers 200: refusing to call a link
- * healthy is right, but so is not calling it broken on the strength of a check the operator
- * switched off. The reason is always printed.
+ * <p>С {@code --keepalive 0s} никаких pong нет, а значит, нет и такого доказательства. Тогда
+ * эндпойнт сообщает {@code unknown} и всё равно отвечает 200: не называть связь здоровой —
+ * правильно, но так же правильно и не называть её сломанной на основании проверки, которую сам
+ * оператор и выключил. Причина печатается всегда.
  */
 final class ClientHealth implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(ClientHealth.class);
 
-    /** What the endpoint concluded, and why. */
+    /** К чему эндпойнт пришёл и почему. */
     enum Verdict {
-        /** Connected and the peer is answering keepalives. */
+        /** Соединение есть, и пир отвечает на keepalive. */
         UP(200),
-        /** Connected, but keepalive is off, so nothing proves the peer is there. */
+        /** Соединение есть, но keepalive выключен — присутствие пира ничем не подтверждено. */
         UNKNOWN(200),
-        /** Connected, yet the peer stopped answering: the link is about to be dropped. */
+        /** Соединение есть, но пир перестал отвечать: связь вот-вот разорвут. */
         STALE(503),
-        /** No connection at all; the client is between reconnect attempts. */
+        /** Соединения нет вообще; клиент между попытками переподключения. */
         DOWN(503);
 
         final int code;
@@ -68,8 +68,8 @@ final class ClientHealth implements AutoCloseable {
     private final Supplier<ClientConnection> current;
 
     /**
-     * @param current the live connection, or null while reconnecting; read on every request
-     *                so the endpoint follows the client across reconnects
+     * @param current живое соединение или null, пока идёт переподключение; читается на каждый
+     *                запрос, чтобы эндпойнт следовал за клиентом через переподключения
      */
     ClientHealth(String bindHost, int port, Supplier<ClientConnection> current) throws IOException {
         this.current = current;
@@ -105,8 +105,8 @@ final class ClientHealth implements AutoCloseable {
     }
 
     /**
-     * The whole judgement, in one place. Order matters: a connection that is gone is DOWN
-     * whatever the counters say, and a stale pong outranks being nominally connected.
+     * Весь вердикт в одном месте. Порядок важен: пропавшее соединение — это DOWN, что бы ни
+     * говорили счётчики, а протухший pong важнее того, что соединение формально есть.
      */
     private static Verdict verdict(ClientConnection c) {
         if (c == null || !c.connected()) {
@@ -129,8 +129,8 @@ final class ClientHealth implements AutoCloseable {
             return sb.toString();
         }
         sb.append("server: ").append(c.url()).append('\n');
-        // Which carrier is in use, because with --transport auto the client chose it, not the
-        // operator: "http" here is the visible sign that the WebSocket did not survive.
+        // Какой транспорт в деле: с --transport auto его выбрал клиент, а не оператор, и «http»
+        // здесь — наглядный признак того, что WebSocket не выжил.
         sb.append("transport: ").append(c.transport().label()).append('\n');
         sb.append("connected for ").append(duration(c.uptime())).append('\n');
 
@@ -173,7 +173,7 @@ final class ClientHealth implements AutoCloseable {
     private static void respond(HttpExchange ex, int code, String body) throws IOException {
         byte[] out = body.getBytes(StandardCharsets.UTF_8);
         ex.getResponseHeaders().add("Content-Type", "text/plain; charset=utf-8");
-        // No caching: a cached health answer is worse than none.
+        // Никакого кеширования: закешированный ответ health хуже, чем никакого.
         ex.getResponseHeaders().add("Cache-Control", "no-store");
         ex.sendResponseHeaders(code, out.length);
         try (OutputStream os = ex.getResponseBody()) {
@@ -181,7 +181,7 @@ final class ClientHealth implements AutoCloseable {
         }
     }
 
-    /** Compact human durations, matching the server's status view. */
+    /** Компактные человекочитаемые длительности — как в status на сервере. */
     static String duration(Duration d) {
         long millis = d.toMillis();
         if (millis < 1000) {

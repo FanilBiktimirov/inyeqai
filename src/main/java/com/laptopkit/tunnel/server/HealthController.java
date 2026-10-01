@@ -3,7 +3,7 @@ package com.laptopkit.tunnel.server;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Liveness probe, matching the {@code /healthz} checks used elsewhere in the chain. */
+/** Проба живости — та же, что и проверки {@code /healthz} в остальной цепочке. */
 @RestController
 public class HealthController {
 

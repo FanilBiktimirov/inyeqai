@@ -6,121 +6,115 @@ import java.util.List;
 import com.laptopkit.tunnel.client.Transport;
 
 /**
- * Every run parameter, as a field. This is the only file to edit before pressing Run.
+ * Все параметры запуска, полями. Единственный файл, который надо править перед нажатием Run.
  *
- * <p>On this branch the tunnel takes no command-line arguments at all: there is nothing to put
- * in a run configuration, and nothing between a breakpoint and the value it is looking at. Set
- * {@link #MODE}, adjust whatever else matters, and run {@link TunnelApplication} straight from
- * the editor.
+ * <p>В этой ветке туннель вообще не принимает аргументов командной строки: нечего заводить
+ * в run configuration и нечего встраивать между брейкпоинтом и значением, на которое он
+ * смотрит. Выставить {@link #MODE}, поправить что ещё важно — и запустить
+ * {@link TunnelApplication} прямо из редактора.
  *
- * <p>The fields are deliberately not {@code final}. A constant would be inlined by the compiler
- * and could not be changed from a running debugger; these can, so a value can be corrected at a
- * breakpoint before the line that reads it.
+ * <p>Поля намеренно не {@code final}. Константу компилятор заинлайнит, и из работающего
+ * отладчика её уже не поменять; а эти — поменять можно, так что значение правится на
+ * брейкпоинте до строки, которая его читает.
  *
- * <p>Ports default high on purpose. The usual suspects &mdash; 3128, 3129, 3130, 8080, 8090
- * &mdash; belong to the live chain this tunnel was written for, and a debug run that quietly
- * took one of them would break something real while looking like it worked.
+ * <p>Порты по умолчанию высокие, и это не случайно. Обычные подозреваемые — 3128, 3129, 3130,
+ * 8080, 8090 — заняты живой цепочкой, под которую туннель и писался, и отладочный запуск,
+ * тихо утащивший один из них, сломал бы что-то настоящее, делая вид, что всё работает.
  */
 public final class TunnelConfig {
 
-    /** What to start. */
+    /** Что поднимать. */
     public enum Mode {
-        /** The public side only. */
+        /** Только публичная сторона. */
         SERVER,
-        /** The tunnel entrance only; needs a server already running at {@link #CLIENT_URL}. */
+        /** Только вход в туннель; сервер уже должен работать по {@link #CLIENT_URL}. */
         CLIENT,
         /**
-         * Both, in one JVM. The point of this mode: one process, both ends, so a breakpoint in
-         * {@code Mux} or {@code HttpLink} catches whichever side reaches it first and the whole
-         * frame exchange is visible in one debugger.
+         * И то и другое, в одной JVM. Смысл режима: один процесс, оба конца, так что
+         * брейкпоинт в {@code Mux} или {@code HttpLink} ловит ту сторону, которая дошла до
+         * него первой, и весь обмен кадрами виден в одном отладчике.
          */
         BOTH,
-        /** Probe a health endpoint and exit, as a container HEALTHCHECK does. */
+        /** Дёрнуть health-эндпойнт и выйти — так же, как это делает HEALTHCHECK контейнера. */
         HEALTHCHECK
     }
 
     public static Mode MODE = Mode.BOTH;
 
-    /** Log every stream as it opens and closes, on both sides. Worth having while debugging. */
+    /** Логировать каждый поток на открытии и закрытии, с обеих сторон. При отладке — полезно. */
     public static boolean VERBOSE = true;
 
-    // ─── server ────────────────────────────────────────────────────────────────────────────
+    // ─── сервер ────────────────────────────────────────────────────────────────────────────
 
     public static int SERVER_PORT = 18080;
 
-    /** Where the server listens. Empty means every interface. */
+    /** Где слушает сервер. Пусто — значит на всех интерфейсах. */
     public static String SERVER_HOST = "127.0.0.1";
 
-    /** Shared secret the client must present. Empty disables the check. */
+    /** Общий секрет, который должен предъявить клиент. Пусто — проверка выключена. */
     public static String AUTH = "tunnel:debug";
 
-    /** Path the WebSocket endpoint is mounted at; the HTTP fallback lives under it. */
+    /** Путь, на который смонтирован WebSocket-эндпойнт; запасной HTTP-транспорт живёт под ним. */
     public static String PATH = "/tunnel";
 
     /**
-     * Where clients may dial, as regexes over {@code host:port} and {@code R:bind:port}. Empty
-     * means anywhere the server can reach, which is the convenient setting for debugging and the
-     * wrong one for anything public.
+     * Куда клиентам можно дозваниваться — регулярками по {@code host:port} и
+     * {@code R:bind:port}. Пусто — значит куда угодно, докуда достаёт сервер: при отладке
+     * удобно, для чего-либо публичного — неверно.
      */
     public static List<String> ALLOW = List.of();
-
-    /** How often the server pings clients. Zero turns server-side keepalive and reaping off. */
     public static Duration SERVER_KEEPALIVE = Duration.ofSeconds(25);
-
-    /** Silence after which a client counts as gone and its reverse listeners are freed. */
     public static Duration PONG_TIMEOUT = Duration.ofSeconds(75);
-
-    /** Serve the HTTP fallback transport alongside the WebSocket one. */
     public static boolean HTTP_FALLBACK = true;
-
-    /** Serve {@code GET /status}. */
     public static boolean STATUS = true;
 
-    // ─── client ────────────────────────────────────────────────────────────────────────────
+    // ─── клиент ────────────────────────────────────────────────────────────────────────────
 
     /**
-     * Which server to connect to. Ignored in {@link Mode#BOTH}, where the address is built from
-     * {@link #SERVER_PORT} and {@link #PATH} so the port is not kept in two places.
+     * К какому серверу подключаться. В режиме {@link Mode#BOTH} игнорируется: адрес там
+     * собирается из {@link #SERVER_PORT} и {@link #PATH}, чтобы порт не держать в двух местах.
+     *
+     * <p>А вот в режиме {@link Mode#CLIENT} держать приходится, и это ловушка: порт и путь
+     * здесь свои, так что правка {@link #SERVER_PORT} сюда молча не доедет. Если клиент не
+     * достучался до сервера, которого вы только что переставили на другой порт, — смотреть
+     * надо сюда.
      */
     public static String CLIENT_URL = "ws://127.0.0.1:18080/tunnel";
 
     /**
-     * How frames are carried. {@code null} means auto: start on a WebSocket and fall back to
-     * HTTP if an attempt does not hold. Pin it to reproduce one carrier on purpose.
+     * Чем везти кадры. {@code null} — авто: начать с WebSocket и свалиться на HTTP, если
+     * попытка не удержалась. Прибить гвоздями, чтобы намеренно воспроизвести один транспорт.
      */
     public static Transport TRANSPORT = null;
 
-    /** How often the client pings. Zero turns its keepalive off, pongs included. */
+    /** Как часто клиент пингует. Ноль выключает его keepalive, вместе с pong'ами. */
     public static int CLIENT_KEEPALIVE_SECONDS = 25;
 
     /**
-     * Forwards, in chisel syntax: {@code [bind:]port:host:port}, with {@code R:} for a reverse
-     * one. Kept as text because that is how they are written everywhere else &mdash; the README,
-     * the compose file, the usual command line &mdash; and a bad one fails loudly at startup.
+     * Пробросы, в синтаксисе chisel: {@code [bind:]port:host:port}, с {@code R:} для
+     * обратного. Хранятся текстом, потому что так они написаны везде ещё — в README, в
+     * compose-файле, в обычной командной строке — и плохой проброс громко падает на старте.
      *
-     * <p>The default makes a loop needing nothing else running: a connection to
-     * {@code 127.0.0.1:18128} goes down the tunnel and comes back out at the server's own HTTP
-     * port, so {@code curl http://127.0.0.1:18128/healthz} exercises the whole path.
+     * <p>Значение по умолчанию замыкает петлю, которой не нужно ничего постороннего:
+     * подключение к {@code 127.0.0.1:18128} уходит в туннель и выходит обратно на собственный
+     * HTTP-порт сервера, так что {@code curl http://127.0.0.1:18128/healthz} прогоняет весь
+     * путь целиком.
      */
     public static List<String> FORWARDS = List.of(
             "18128:127.0.0.1:18080"
-            // , "R:18130:127.0.0.1:18080"   // reverse: the server listens, the client dials
+            // , "R:18130:127.0.0.1:18080"   // обратный: слушает сервер, дозванивается клиент
     );
 
-    /** Where the client's own health endpoint listens. Zero turns it off. */
+    /** Где слушает собственный health-эндпойнт клиента. Ноль — выключить. */
     public static int HEALTH_PORT = 19000;
 
     public static String HEALTH_HOST = "127.0.0.1";
 
-    // ─── healthcheck ───────────────────────────────────────────────────────────────────────
-
-    /** What {@link Mode#HEALTHCHECK} probes before setting an exit code. */
     public static String HEALTHCHECK_URL = "http://127.0.0.1:19000/healthz";
 
     private TunnelConfig() {
     }
 
-    /** The address the client should use, which in {@link Mode#BOTH} is the server we just started. */
     public static String clientUrl() {
         if (MODE == Mode.BOTH) {
             return "ws://127.0.0.1:" + SERVER_PORT + PATH;

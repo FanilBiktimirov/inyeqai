@@ -31,29 +31,30 @@ import com.laptopkit.tunnel.common.Mux;
 import com.laptopkit.tunnel.common.Reverse;
 
 /**
- * One attempt at a tunnel connection. Owns the WebSocket, a {@link Mux}, the local
- * listeners, a serialized send queue (the JDK WebSocket forbids overlapping sends), and
- * the keepalive schedule. {@link #run()} blocks until the connection ends.
+ * Одна попытка подключения туннеля. Владеет WebSocket, {@link Mux}, локальными слушателями,
+ * сериализованной очередью отправки (WebSocket из JDK запрещает перекрывающиеся отправки) и
+ * расписанием keepalive. {@link #run()} блокируется, пока соединение не закончится.
  *
- * <p>Keepalive is not just a ping: the reply is tracked, and a tunnel whose pongs stop
- * arriving is torn down so the caller reconnects. Without that a connection killed
- * invisibly &mdash; laptop suspended, NAT entry expired, gateway restarted &mdash; looks
- * healthy forever, because nothing is written to notice the broken socket.
+ * <p>Keepalive здесь не просто ping: ответ отслеживается, и туннель, до которого перестали
+ * доходить pong, разбирается — чтобы вызывающий переподключился. Без этого соединение, убитое
+ * незаметно — ноутбук ушёл в сон, запись в NAT протухла, шлюз перезапустили — выглядит здоровым
+ * вечно: в сокет никто не пишет, а значит, никто и не заметит, что он сломан.
  */
 final class ClientConnection implements WebSocket.Listener {
 
     private static final Logger log = LoggerFactory.getLogger(ClientConnection.class);
     private static final int DIAL_TIMEOUT_MS = 10_000;
     private static final byte[] PING = new byte[0];
-    private static final byte[] STOP = new byte[0]; // distinct identity from PING
+    private static final byte[] STOP = new byte[0]; // другой объект, чем PING: сравнение по ссылке
     /**
-     * DATA frames allowed in the send queue at once. Per-stream windows already bound each
-     * stream; this caps the total so many streams cannot add up to an unbounded queue.
+     * Сколько кадров DATA разом можно держать в очереди отправки. Окна по потокам уже
+     * ограничивают каждый поток в отдельности; это ограничивает сумму, чтобы много потоков не
+     * сложились в неограниченную очередь.
      */
     private static final int MAX_INFLIGHT_DATA = 64;
-    /** A single message this large means a desynchronised peer, not real traffic. */
+    /** Сообщение такого размера значит, что пир рассинхронизировался, а не реальный трафик. */
     private static final int MAX_MESSAGE = 1024 * 1024;
-    /** Pongs may be missed; two keepalive periods of silence means the link is gone. */
+    /** Pong можно и пропустить; но два периода keepalive тишины — значит, связи больше нет. */
     private static final int PONG_TIMEOUT_FACTOR = 2;
 
     private final String url;
@@ -99,49 +100,50 @@ final class ClientConnection implements WebSocket.Listener {
     }
 
     /**
-     * Connect and block until the carrier closes or errors. Throws if it cannot be
-     * established at all, which the caller treats as a failed attempt.
+     * Подключиться и блокироваться, пока транспорт не закроется или не отвалится с ошибкой.
+     * Бросает исключение, если соединение вообще не удалось поднять, — вызывающий считает это
+     * неудавшейся попыткой.
      *
-     * <p>Both transports arrive here as a {@link WebSocket} and call back into this class as
-     * a {@link WebSocket.Listener}; see {@link HttpLink} for why the HTTP one is shaped that
-     * way. Everything below this method is the same for either.
+     * <p>Оба транспорта приходят сюда как {@link WebSocket} и зовут этот класс обратно как
+     * {@link WebSocket.Listener}; почему HTTP-транспорт сделан именно так — см. {@link HttpLink}.
+     * Всё, что ниже этого метода, для обоих одинаково.
      */
     void run() throws Exception {
         if (transport == Transport.HTTP) {
-            HttpLink.open(url, auth, this); // calls onOpen before it returns
+            HttpLink.open(url, auth, this); // зовёт onOpen до того, как вернётся
         } else {
             HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build();
             WebSocket.Builder b = http.newWebSocketBuilder().connectTimeout(Duration.ofSeconds(15));
             if (auth != null && !auth.isEmpty()) {
                 b.header("X-Tunnel-Auth", auth);
             }
-            b.buildAsync(URI.create(url), this).join(); // completes exceptionally on 401 etc.
+            b.buildAsync(URI.create(url), this).join(); // завершится исключением на 401 и прочем
         }
         closed.await();
     }
 
-    /** Tear down this connection and let {@link #run()} return. Used by tests. */
+    /** Разобрать это соединение и дать {@link #run()} вернуть управление. Нужно тестам. */
     void stop() {
         shutdown();
     }
 
-    /** How long this connection stayed up, for the caller's reconnect backoff. */
+    /** Сколько это соединение продержалось — для нарастающей задержки переподключения. */
     Duration uptime() {
         long since = upSinceNanos;
         return since == 0 ? Duration.ZERO : Duration.ofNanos(System.nanoTime() - since);
     }
 
-    /** True once the WebSocket is open and until the connection is torn down. */
+    /** true с момента, как WebSocket открылся, и до того, как соединение разобрали. */
     boolean connected() {
         return ws != null && !down.get();
     }
 
     /**
-     * Age of the newest keepalive reply. This is the one number that says the far end is
-     * really answering: a WebSocket whose peer has vanished without a TCP close stays
-     * "connected" indefinitely, and only the missing pongs give it away.
+     * Давность самого свежего ответа на keepalive. Это единственное число, которое говорит, что
+     * дальняя сторона действительно отвечает: WebSocket, чей пир исчез без TCP-close, остаётся
+     * «подключённым» бесконечно, и выдают его только пропавшие pong.
      *
-     * @return empty when keepalive is off, because then there is nothing to go on
+     * @return empty, когда keepalive выключен: тогда судить просто не по чему
      */
     Optional<Duration> sinceLastPong() {
         if (keepaliveSec <= 0) {
@@ -150,7 +152,7 @@ final class ClientConnection implements WebSocket.Listener {
         return Optional.of(Duration.ofNanos(System.nanoTime() - lastPongNanos));
     }
 
-    /** How long a pong may be missing before the link counts as gone. */
+    /** Сколько pong может отсутствовать, прежде чем связь считается потерянной. */
     Duration pongDeadline() {
         return Duration.ofSeconds((long) keepaliveSec * PONG_TIMEOUT_FACTOR);
     }
@@ -159,8 +161,8 @@ final class ClientConnection implements WebSocket.Listener {
         return url;
     }
 
-    /** Which carrier this attempt used. Shown by the health endpoint, which matters when
-     * {@code --transport auto} picked it rather than the operator. */
+    /** Каким транспортом шла эта попытка. Видно на health-эндпойнте, и это важно, когда
+     * транспорт выбрал {@code --transport auto}, а не оператор. */
     Transport transport() {
         return transport;
     }
@@ -173,7 +175,7 @@ final class ClientConnection implements WebSocket.Listener {
         return reverses;
     }
 
-    /** The multiplexer's counters, or empty before the connection opened. */
+    /** Счётчики мультиплексора или empty, пока соединение не открылось. */
     Optional<Mux> mux() {
         return Optional.ofNullable(mux);
     }
@@ -282,8 +284,8 @@ final class ClientConnection implements WebSocket.Listener {
                 break;
             }
             int id = mux.nextId();
-            // Register first so a CLOSE answering this OPEN cannot arrive for an unknown
-            // stream, then send OPEN before any DATA can overtake it.
+            // Сначала регистрируем, чтобы CLOSE в ответ на этот OPEN не пришёл на неизвестный
+            // поток, и только потом отправляем OPEN — до того, как его сможет обогнать DATA.
             mux.prepareOutbound(id, sock, spec.dstHost() + ":" + spec.dstPort());
             enqueue(Frames.open(id, spec.dstHost(), spec.dstPort()));
             mux.startOutbound(id);
@@ -319,9 +321,10 @@ final class ClientConnection implements WebSocket.Listener {
         if (down.get()) {
             return;
         }
-        // DATA waits for a slot, which is how the tunnel's backpressure reaches the mux
-        // pump threads. Control frames are small and must never queue behind bulk data:
-        // a WINDOW frame stuck in line would stall the very stream it is meant to unblock.
+        // DATA ждёт свободного слота — так обратное давление туннеля доходит до качающих
+        // потоков мультиплексора. Служебные кадры маленькие, и им нельзя стоять в очереди за
+        // объёмными данными: застрявший кадр WINDOW застопорил бы тот самый поток, который
+        // он и должен разблокировать.
         if (isData(bytes)) {
             try {
                 while (!dataSlots.tryAcquire(1, 200, TimeUnit.MILLISECONDS)) {
@@ -374,9 +377,9 @@ final class ClientConnection implements WebSocket.Listener {
     }
 
     /**
-     * @param graceful send a close frame first. Worth it when we are the ones ending the
-     *                 connection, since it makes the server free this session's reverse
-     *                 listeners at once; pointless when the socket is already gone.
+     * @param graceful сначала отправить кадр закрытия. Имеет смысл, когда соединение
+     *                 заканчиваем мы: сервер тогда сразу освободит обратные слушатели этой
+     *                 сессии; бессмысленно, когда сокет и так уже мёртв.
      */
     private void shutdown(boolean graceful) {
         if (!down.compareAndSet(false, true)) {
@@ -395,13 +398,13 @@ final class ClientConnection implements WebSocket.Listener {
             mux.closeAll();
         }
         sendQ.offer(STOP);
-        // Release anything blocked waiting for a send slot now that nothing will drain.
+        // Отпускаем всех, кто ждёт слот отправки: вычерпывать очередь больше никто не будет.
         dataSlots.release(MAX_INFLIGHT_DATA);
         WebSocket socket = ws;
         if (socket != null) {
             if (graceful) {
-                // Bounded wait, then abort regardless: a half-dead socket never completes
-                // the close, and that is exactly the case this path has to survive.
+                // Ждём ограниченное время и всё равно обрываем: полумёртвый сокет закрытие
+                // никогда не доведёт до конца, а именно этот случай тут и надо пережить.
                 try {
                     socket.sendClose(WebSocket.NORMAL_CLOSURE, "bye")
                             .orTimeout(2, TimeUnit.SECONDS).exceptionally(t -> null).join();

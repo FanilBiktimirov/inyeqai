@@ -12,20 +12,21 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * A proxy that severs the tunnel's downstream response once it has carried a set number of bytes,
- * and leaves every other request alone. This is the network the resumable downstream exists for: a
- * gateway with a cap on how large or how long one response may be, which to a tunnel means its
- * downstream is cut on a schedule while requests keep working perfectly.
+ * Прокси, который обрывает ответ потока вниз, как только тот пронёс заданное число байт, и не
+ * трогает все остальные запросы. Это ровно та сеть, ради которой и нужен восстанавливаемый поток
+ * вниз: шлюз с ограничением на размер или длительность одного ответа — для туннеля это значит,
+ * что поток вниз обрывают по расписанию, а запросы при этом работают безупречно.
  *
- * <p>Capping only the downstream is what makes a test using this mean something: requests keep
- * going through, so what is being exercised is resumption of that one response rather than a
- * general outage that any reconnect would recover from.
+ * <p>Обрывать только поток вниз — именно это придаёт тесту на таком прокси смысл: запросы
+ * продолжают проходить, так что проверяется восстановление одного конкретного ответа, а не общий
+ * сбой сети, из которого выбрался бы любой переподключающийся клиент.
  *
- * <p>Picking out that response is less obvious than it sounds. The client keeps connections alive
- * and reuses them, so the downstream {@code GET} often travels on a connection whose first request
- * was something else entirely &mdash; deciding from the first request head alone would quietly cap
- * nothing at all. Instead the request direction is watched for the downstream path, including
- * across read boundaries, and the cap is applied to a connection once it has carried one.
+ * <p>Выцепить этот самый ответ сложнее, чем кажется. Клиент держит соединения открытыми и
+ * переиспользует их, поэтому {@code GET} за потоком вниз часто идёт по соединению, чей первый
+ * запрос был совсем про другое — решать по одной лишь первой голове запроса значило бы тихо не
+ * обрывать вообще ничего. Вместо этого в направлении запросов ищется путь потока вниз, в том
+ * числе на стыке двух чтений, и ограничение включается для соединения после того, как оно такой
+ * запрос пронесло.
  */
 final class DownstreamCappingProxy implements AutoCloseable {
 
@@ -54,7 +55,10 @@ final class DownstreamCappingProxy implements AutoCloseable {
         return listener.getLocalPort();
     }
 
-    /** How many responses were cut. A test asserting resumption should check this really fired. */
+    /**
+     * Сколько ответов оборвано. Тест на восстановление сессии должен убедиться, что это правда
+     * сработало.
+     */
     int cuts() {
         return cuts.get();
     }
@@ -98,7 +102,7 @@ final class DownstreamCappingProxy implements AutoCloseable {
         }
     }
 
-    /** Read up to and including the blank line that ends a request head, and no further. */
+    /** Читает голову запроса до пустой строки включительно — и ни байта дальше. */
     private static byte[] readHead(InputStream in) throws IOException {
         ByteArrayOutputStream head = new ByteArrayOutputStream();
         int[] tail = new int[4];
@@ -119,12 +123,12 @@ final class DownstreamCappingProxy implements AutoCloseable {
         return head.size() == 0 ? null : head.toByteArray();
     }
 
-    /** Forward requests, noticing when this connection asks for a downstream. */
+    /** Пробрасывает запросы и замечает, когда это соединение просит поток вниз. */
     private void pipeRequests(InputStream in, OutputStream out, AtomicBoolean capped,
                               Socket a, Socket b) {
         Thread t = new Thread(() -> {
-            // Overlap the reads by the length of the marker so one split across two of them is
-            // still found.
+            // Чтения перекрываются на длину маркера, чтобы маркер, разрезанный между двумя
+            // чтениями, всё равно нашёлся.
             byte[] buf = new byte[8192];
             byte[] window = new byte[MARKER.length - 1 + buf.length];
             int carried = 0;
@@ -142,7 +146,7 @@ final class DownstreamCappingProxy implements AutoCloseable {
                     out.flush();
                 }
             } catch (IOException ignored) {
-                // either end going away ends this direction
+                // уход любого из концов заканчивает это направление
             } finally {
                 closeQuiet(a);
                 closeQuiet(b);
@@ -152,7 +156,7 @@ final class DownstreamCappingProxy implements AutoCloseable {
         t.start();
     }
 
-    /** Forward responses, cutting the connection once a capped one has carried enough. */
+    /** Пробрасывает ответы и рвёт соединение, когда помеченное пронесло достаточно. */
     private void pipeResponses(InputStream in, OutputStream out, AtomicBoolean capped,
                                Socket a, Socket b) {
         Thread t = new Thread(() -> {
@@ -165,8 +169,8 @@ final class DownstreamCappingProxy implements AutoCloseable {
                     out.flush();
                     carried += n;
                     if (capped.get() && carried > capBytes) {
-                        // Exactly how a capped gateway behaves: the response simply stops, with
-                        // no hint about how much of it the other end actually took.
+                        // Ровно так ведёт себя шлюз с ограничением: ответ просто прекращается,
+                        // и ни намёка на то, сколько из него другой конец на самом деле забрал.
                         cuts.incrementAndGet();
                         break;
                     }
@@ -181,7 +185,7 @@ final class DownstreamCappingProxy implements AutoCloseable {
         t.start();
     }
 
-    /** Index of {@link #MARKER} within the first {@code length} bytes, or -1. */
+    /** Позиция {@link #MARKER} в первых {@code length} байтах или -1. */
     private static int indexOf(byte[] haystack, int length) {
         outer:
         for (int i = 0; i + MARKER.length <= length; i++) {

@@ -12,9 +12,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
 /**
- * {@code tunnel.http-fallback=false} has to remove the HTTP transport, not merely discourage
- * it. An operator who turns the fallback off is usually doing it to narrow what the server
- * exposes, so a still-answering endpoint would defeat the point.
+ * {@code tunnel.http-fallback=false} должен убрать HTTP-транспорт, а не просто сделать его
+ * нежелательным. Когда администратор выключает запасной транспорт, он обычно сужает то, что
+ * сервер выставляет наружу, поэтому всё ещё отвечающий эндпойнт сводит всю затею на нет.
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,

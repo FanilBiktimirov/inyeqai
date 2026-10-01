@@ -27,14 +27,14 @@ import com.laptopkit.tunnel.common.Framing;
 import com.laptopkit.tunnel.common.Reverse;
 
 /**
- * The same failure the WebSocket transport is tested against, on the HTTP one: a client that
- * stops answering without closing anything. A suspended laptop leaves the server holding a TCP
- * connection nobody is on the other end of, and with it the reverse ports that session bound.
+ * Тот же отказ, на котором проверяется WebSocket-транспорт, но на HTTP: клиент перестаёт
+ * отвечать, ничего не закрывая. Усыплённый ноутбук оставляет сервер с TCP-соединением, на другом
+ * конце которого никого нет, а вместе с ним — с обратными портами, которые заняла та сессия.
  *
- * <p>On the HTTP carrier there is no TCP close to wait for either, and the keepalive has to do
- * the same job through ordinary frames. This drives the endpoints by hand, with no client
- * involved, so the session is genuinely mute: it opens a downstream, asks for a reverse
- * listener, and then never answers another thing.
+ * <p>На HTTP-транспорте закрытия TCP тоже не дождёшься, и ту же работу должен сделать keepalive
+ * обычными кадрами. Тест дёргает эндпойнты вручную, без всякого клиента, поэтому сессия
+ * по-настоящему молчит: открывает поток вниз, просит обратный слушатель и больше не отвечает
+ * ни на что.
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -59,8 +59,8 @@ class HttpStaleSessionTest {
         assertEquals(200, connect.statusCode());
         String id = connect.body().trim();
 
-        // Open the downstream and leave it open. Nothing is ever posted back, so no pong
-        // reaches the server: this is what a vanished client looks like from here.
+        // Открываем поток вниз и оставляем открытым. Назад ничего не постится, поэтому до
+        // сервера не доходит ни один pong: именно так отсюда выглядит исчезнувший клиент.
         HttpResponse<InputStream> down = http.send(
                 HttpRequest.newBuilder(uri("/tunnel/http/down/" + id)).GET().build(),
                 HttpResponse.BodyHandlers.ofInputStream());
@@ -70,7 +70,7 @@ class HttpStaleSessionTest {
             askForReverseListener(id, reversePort);
             awaitBound(reversePort);
 
-            // Past the pong timeout the session must be given up on, and its port with it.
+            // За таймаутом pong сессию обязаны бросить, а вместе с ней отпустить и её порт.
             Thread.sleep(5_000);
             assertTrue(portIsFree(reversePort),
                     "the reverse port should be released once the session stops answering");
@@ -80,7 +80,7 @@ class HttpStaleSessionTest {
     private void askForReverseListener(String id, int reversePort) throws Exception {
         ByteArrayOutputStream body = new ByteArrayOutputStream();
         Framing.write(body, Frames.config(
-                List.of(new Reverse("127.0.0.1", reversePort, "127.0.0.1", 9)))); // 9 = discard
+                List.of(new Reverse("127.0.0.1", reversePort, "127.0.0.1", 9)))); // 9 — discard
         HttpResponse<Void> res = http.send(
                 HttpRequest.newBuilder(uri("/tunnel/http/up/" + id + "?batch=1"))
                         .timeout(Duration.ofSeconds(10))
@@ -102,7 +102,7 @@ class HttpStaleSessionTest {
         fail("the server never opened the reverse listener on " + port);
     }
 
-    /** Binding it ourselves is the proof: a refused connection could be a passing race. */
+    /** Доказательство — занять порт самим: отказ в соединении может быть просто гонкой. */
     private static boolean portIsFree(int port) {
         try (ServerSocket s = new ServerSocket(port)) {
             return true;

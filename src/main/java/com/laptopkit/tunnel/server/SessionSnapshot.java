@@ -5,15 +5,16 @@ import java.util.List;
 import com.laptopkit.tunnel.common.StreamInfo;
 
 /**
- * What one tunnel session looks like at a moment in time. Byte directions are named from the
- * server's point of view, and {@code lastPongMillis} is the age of the newest keepalive
- * reply &mdash; the number that says whether a session is actually alive or merely still
- * connected.
+ * Как выглядит одна сессия туннеля в конкретный момент. Направления байтов названы с точки
+ * зрения сервера, а {@code lastPongMillis} — это возраст свежайшего ответа на keepalive, то
+ * самое число, которое говорит, жива ли сессия на самом деле или всего лишь всё ещё
+ * подключена.
  *
- * @param streams       the live streams of this session
- * @param resumes       how many times this session's carrier had to be resumed; always zero for
- *                      a WebSocket, which has no such notion
- * @param holdingBytes  bytes written but not yet confirmed, kept in case they must be sent again
+ * @param streams       живые потоки этой сессии
+ * @param resumes       сколько раз транспорт этой сессии приходилось восстанавливать; для
+ *                      WebSocket всегда ноль — у него такого понятия нет
+ * @param holdingBytes  байты, записанные но ещё не подтверждённые; держим на случай, если их
+ *                      придётся отправить заново
  */
 public record SessionSnapshot(
         String id,

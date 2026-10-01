@@ -15,16 +15,16 @@ import com.laptopkit.tunnel.common.Mux;
 import com.laptopkit.tunnel.common.StreamInfo;
 
 /**
- * {@code GET /status} &mdash; what the tunnel is doing right now, as plain text meant to be
- * read by a person with curl.
+ * {@code GET /status} — что туннель делает прямо сейчас, простым текстом, рассчитанным на
+ * чтение человеком через curl.
  *
- * <p>The logs say when a client connects and when a listener opens, and nothing after that.
- * This is the missing other half: which streams are live, where each one goes, how much it
- * has carried, and how long ago each session last answered a keepalive. A tunnel that is
- * quietly dropping streams and one that is working look identical without it.
+ * <p>Логи говорят, когда подключился клиент и когда открылся слушатель, и больше ничего.
+ * Это недостающая вторая половина: какие потоки живы, куда каждый идёт, сколько через себя
+ * пропустил и как давно каждая сессия в последний раз ответила на keepalive. Без этого
+ * туннель, тихо теряющий потоки, и работающий туннель выглядят одинаково.
  *
- * <p>It is behind the same {@code X-Tunnel-Auth} token as the tunnel itself, because the
- * output names internal destinations and traffic volumes.
+ * <p>Закрыт тем же токеном {@code X-Tunnel-Auth}, что и сам туннель, потому что в выдаче
+ * названы внутренние адреса и объёмы трафика.
  */
 @RestController
 class StatusController {
@@ -89,8 +89,8 @@ class StatusController {
             sb.append("  up ").append(duration(s.upMillis()))
                     .append(", last pong ").append(duration(s.lastPongMillis())).append(" ago").append('\n');
             if (s.resumes() > 0 || s.holdingBytes() > 0) {
-                // Printed only when there is something to print, so a WebSocket session and a
-                // healthy idle HTTP one stay as quiet as they were.
+                // Печатается только когда есть что печатать, чтобы WebSocket-сессия и здоровая
+                // простаивающая HTTP-сессия остались такими же немногословными, как и были.
                 sb.append("  carrier resumed ").append(s.resumes()).append(" time(s), holding ")
                         .append(Mux.bytes(s.holdingBytes())).append(" unconfirmed").append('\n');
             }
@@ -110,7 +110,7 @@ class StatusController {
         return sb.toString();
     }
 
-    /** Compact human durations: 980ms, 4.2s, 3m12s, 2h05m. */
+    /** Компактные человекочитаемые длительности: 980ms, 4.2s, 3m12s, 2h05m. */
     static String duration(long millis) {
         if (millis < 1000) {
             return millis + "ms";
