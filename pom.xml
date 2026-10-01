@@ -43,7 +43,7 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
-                    <mainClass>com.inyeqai.tunnel.TunnelApplication</mainClass>
+                    <mainClass>com.inyeqai.tl.InyeqaiApplication</mainClass>
                 </configuration>
             </plugin>
         </plugins>

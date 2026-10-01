@@ -5,12 +5,12 @@ spring:
   main:
     banner-mode: "off"
 
-tunnel:
-  # Shared secret the client sends as X-Tunnel-Auth. Empty = open (dev only).
-  # Override with --auth on the command line or TUNNEL_AUTH in the environment.
+tl:
+  # Shared secret the client sends as X-TL-Auth. Empty = open (dev only).
+  # Override with --auth on the command line or TL_AUTH in the environment.
   auth: ""
   # Path the WebSocket endpoint is mounted at; the client appends it if the URL has none.
-  path: /tunnel
+  path: /tl
   # Destinations clients may reach: regexes over "host:port" for forward streams and
   # "R:bind:port" for reverse listeners. Empty = anything the server can reach.
   # Example for the proxy chain (one way in, one way back):
@@ -31,4 +31,4 @@ tunnel:
 logging:
   level:
     root: INFO
-    com.inyeqai.tunnel: INFO
+    com.inyeqai.tl: INFO
